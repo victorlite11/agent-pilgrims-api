@@ -17,9 +17,9 @@ const SystemReportsModal = ({ open, onClose }: SystemReportsModalProps) => {
     if (open) {
       setLoading(true);
       Promise.all([
-        fetch("http://localhost:4000/stats").then(res => res.json()),
-        fetch("http://localhost:4000/agents").then(res => res.json()),
-        fetch("http://localhost:4000/pilgrims").then(res => res.json())
+  fetch("https://agent-pilgrims-api.onrender.com/stats").then(res => res.json()),
+  fetch("https://agent-pilgrims-api.onrender.com/agents").then(res => res.json()),
+  fetch("https://agent-pilgrims-api.onrender.com/pilgrims").then(res => res.json())
       ]).then(([statsData, agentsData, pilgrimsData]) => {
         setStats(statsData);
         setAgents(agentsData);

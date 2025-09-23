@@ -14,7 +14,7 @@ const ViewPilgrimsModal = ({ open, onClose }: ViewPilgrimsModalProps) => {
   useEffect(() => {
     if (open) {
       setLoading(true);
-      fetch("http://localhost:4000/pilgrims")
+  fetch("https://agent-pilgrims-api.onrender.com/pilgrims")
         .then((res) => res.json())
         .then((data) => setPilgrims(data))
         .finally(() => setLoading(false));

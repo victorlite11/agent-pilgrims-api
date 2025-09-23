@@ -64,7 +64,7 @@ const AgentDashboard = () => {
     // For demo, use agentId 1
     const agentId = 1;
     setDocLoading(true);
-    fetch(`http://localhost:4000/agents/${agentId}`)
+  fetch(`https://agent-pilgrims-api.onrender.com/agents/${agentId}`)
       .then(res => res.json())
       .then(data => setAgentData({
         ...data,
@@ -88,7 +88,7 @@ const AgentDashboard = () => {
           location: "Lagos, Nigeria"
         });
       });
-    fetch(`http://localhost:4000/pilgrims?agentId=${agentId}`)
+  fetch(`https://agent-pilgrims-api.onrender.com/pilgrims?agentId=${agentId}`)
       .then(res => res.json())
       .then(data => setPilgrims(data))
       .catch(() => {
@@ -108,7 +108,7 @@ const AgentDashboard = () => {
   useEffect(() => {
     if (!agentData || !pilgrims.length) return;
     setDocLoading(true);
-    fetch('http://localhost:4000/documents')
+  fetch('https://agent-pilgrims-api.onrender.com/documents')
       .then(res => res.json())
       .then(data => {
         const pilgrimIds = pilgrims.map((p: any) => p.id);
@@ -134,7 +134,7 @@ const AgentDashboard = () => {
   const handleDocumentStatus = async (docId: number, status: string) => {
     setDocLoading(true);
     try {
-      const res = await fetch(`http://localhost:4000/documents/${docId}` , {
+  const res = await fetch(`https://agent-pilgrims-api.onrender.com/documents/${docId}` , {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status })
@@ -178,7 +178,7 @@ const AgentDashboard = () => {
       date: new Date().toISOString(),
       status: "pending"
     };
-    const res = await fetch("http://localhost:4000/takeoverRequests", {
+  const res = await fetch("https://agent-pilgrims-api.onrender.com/takeoverRequests", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(request)
@@ -571,7 +571,7 @@ const AgentDashboard = () => {
                             fileUrl,
                             fileType
                           };
-                          const res = await fetch('http://localhost:4000/messages', {
+                          const res = await fetch('https://agent-pilgrims-api.onrender.com/messages', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(newMessage)

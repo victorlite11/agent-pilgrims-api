@@ -60,7 +60,7 @@ const PilgrimDashboard = () => {
 
   // Initial fetch
   useEffect(() => {
-    fetch(`http://localhost:4000/pilgrims/${pilgrimId}`)
+  fetch(`https://agent-pilgrims-api.onrender.com/pilgrims/${pilgrimId}`)
       .then(res => {
         if (!res.ok) throw new Error('Pilgrim not found');
         return res.json();
@@ -68,11 +68,11 @@ const PilgrimDashboard = () => {
       .then(data => setPilgrimData(data))
       .catch(() => setPilgrimData(undefined));
 
-    fetch(`http://localhost:4000/documents?pilgrimId=${pilgrimId}`)
+  fetch(`https://agent-pilgrims-api.onrender.com/documents?pilgrimId=${pilgrimId}`)
       .then(res => res.json())
       .then(data => setDocuments(data));
 
-    fetch(`http://localhost:4000/messages?pilgrimId=${pilgrimId}`)
+  fetch(`https://agent-pilgrims-api.onrender.com/messages?pilgrimId=${pilgrimId}`)
       .then(res => res.json())
       .then(data => setMessages(data));
   }, []);
@@ -81,7 +81,7 @@ const PilgrimDashboard = () => {
   useEffect(() => {
     const interval = setInterval(async () => {
       // Check for new messages
-      const msgRes = await fetch(`http://localhost:4000/messages?pilgrimId=${pilgrimId}`);
+  const msgRes = await fetch(`https://agent-pilgrims-api.onrender.com/messages?pilgrimId=${pilgrimId}`);
       const latestMessages = await msgRes.json();
       if (latestMessages.length > messages.length) {
         const newMsgs = latestMessages.slice(messages.length);
@@ -99,7 +99,7 @@ const PilgrimDashboard = () => {
       // Simulate agent typing randomly (for demo)
       setIsAgentTyping(Math.random() < 0.2); // 20% chance agent is typing
       // Check for document status changes
-      const docRes = await fetch(`http://localhost:4000/documents?pilgrimId=${pilgrimId}`);
+  const docRes = await fetch(`https://agent-pilgrims-api.onrender.com/documents?pilgrimId=${pilgrimId}`);
       const latestDocs = await docRes.json();
       latestDocs.forEach((doc, idx) => {
         const prevDoc = documents.find((d) => d.id === doc.id);
@@ -130,14 +130,14 @@ const PilgrimDashboard = () => {
     const doc = documents.find((d: any) => d.name === docName);
     if (doc) {
       // PATCH status to Uploaded
-      await fetch(`http://localhost:4000/documents/${doc.id}`, {
+  await fetch(`https://agent-pilgrims-api.onrender.com/documents/${doc.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "Uploaded", date: new Date().toISOString().slice(0, 10) })
       });
     } else {
       // POST new document
-      await fetch(`http://localhost:4000/documents`, {
+  await fetch(`https://agent-pilgrims-api.onrender.com/documents`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -149,7 +149,7 @@ const PilgrimDashboard = () => {
       });
     }
     // Refresh docs
-    const d = await fetch(`http://localhost:4000/documents?pilgrimId=${pilgrimId}`).then(r => r.json());
+  const d = await fetch(`https://agent-pilgrims-api.onrender.com/documents?pilgrimId=${pilgrimId}`).then(r => r.json());
     setDocuments(d);
     setDocUploading(null);
     toast({ title: 'Document Uploaded', description: `${docName} uploaded.` });
@@ -157,7 +157,7 @@ const PilgrimDashboard = () => {
 
   const handleSendMessage = async (newMessage: any) => {
     // POST to mock API
-    const res = await fetch('http://localhost:4000/messages', {
+  const res = await fetch('https://agent-pilgrims-api.onrender.com/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...newMessage, pilgrimId })
@@ -174,7 +174,7 @@ const PilgrimDashboard = () => {
   const handleSubmitRegistration = async () => {
     setSubmitting(true);
     // PATCH pilgrim to set registrationSubmitted: true
-    const res = await fetch(`http://localhost:4000/pilgrims/${pilgrimId}`, {
+  const res = await fetch(`https://agent-pilgrims-api.onrender.com/pilgrims/${pilgrimId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ registrationSubmitted: true })
@@ -426,8 +426,8 @@ const PilgrimDashboard = () => {
                             onDocumentUpload={async (newDoc) => {
                               // Save to backend
                               await fetch(doc
-                                ? `http://localhost:4000/documents/${doc.id}`
-                                : `http://localhost:4000/documents`, {
+                                ? `https://agent-pilgrims-api.onrender.com/documents/${doc.id}`
+                                : `https://agent-pilgrims-api.onrender.com/documents`, {
                                 method: doc ? "PATCH" : "POST",
                                 headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify({
@@ -439,7 +439,7 @@ const PilgrimDashboard = () => {
                                 })
                               });
                               // Refresh docs
-                              const d = await fetch(`http://localhost:4000/documents?pilgrimId=${pilgrimId}`).then(r => r.json());
+                              const d = await fetch(`https://agent-pilgrims-api.onrender.com/documents?pilgrimId=${pilgrimId}`).then(r => r.json());
                               setDocuments(d);
                               toast({ title: 'Document Uploaded', description: `${docName} uploaded.` });
                             }}
@@ -513,7 +513,7 @@ const PilgrimDashboard = () => {
                       fileUrl,
                       fileType
                     };
-                    const res = await fetch('http://localhost:4000/messages', {
+                    const res = await fetch('https://agent-pilgrims-api.onrender.com/messages', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify(newMessage)

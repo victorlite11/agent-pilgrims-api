@@ -14,7 +14,7 @@ const ManageBansModal = ({ open, onClose }: ManageBansModalProps) => {
   useEffect(() => {
     if (open) {
       setLoading(true);
-      fetch("http://localhost:4000/pilgrims")
+  fetch("https://agent-pilgrims-api.onrender.com/pilgrims")
         .then((res) => res.json())
         .then((data) => setPilgrims(data))
         .finally(() => setLoading(false));
@@ -23,7 +23,7 @@ const ManageBansModal = ({ open, onClose }: ManageBansModalProps) => {
 
   const handleBanToggle = async (id: number, isBanned: boolean) => {
     const newStatus = isBanned ? "Active" : "Banned";
-    await fetch(`http://localhost:4000/pilgrims/${id}`, {
+  await fetch(`https://agent-pilgrims-api.onrender.com/pilgrims/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: newStatus })
