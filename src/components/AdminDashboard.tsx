@@ -32,7 +32,7 @@ import SystemReportsModal from "./SystemReportsModal";
 
 const AdminDashboard = () => {
   const [settingsModal, setSettingsModal] = useState("");
-  const [apiEndpoint, setApiEndpoint] = useState("http://localhost:4000");
+  const [apiEndpoint, setApiEndpoint] = useState("https://agent-pilgrims-api.onrender.com");
   const [theme, setTheme] = useState("light");
 
   useEffect(() => {
@@ -71,14 +71,14 @@ const AdminDashboard = () => {
 
     useEffect(() => {
       setDocLoading(true);
-      fetch('http://localhost:4000/documents')
+  fetch('https://agent-pilgrims-api.onrender.com/documents')
         .then(res => res.json())
         .then(data => setDocuments(data))
         .catch(() => setDocuments([]))
         .finally(() => setDocLoading(false));
 
         setActivityLoading(true);
-        fetch('http://localhost:4000/activities')
+  fetch('https://agent-pilgrims-api.onrender.com/activities')
           .then(res => res.json())
           .then(data => setActivities(data))
           .catch(() => setActivities([]))
@@ -87,8 +87,8 @@ const AdminDashboard = () => {
         // Fetch notifications (new documents, takeover requests)
         const fetchNotifications = () => {
           Promise.all([
-            fetch('http://localhost:4000/documents?status=Pending').then(res => res.json()),
-            fetch('http://localhost:4000/takeoverRequests').then(res => res.json())
+            fetch('https://agent-pilgrims-api.onrender.com/documents?status=Pending').then(res => res.json()),
+            fetch('https://agent-pilgrims-api.onrender.com/takeoverRequests').then(res => res.json())
           ]).then(([pendingDocs, takeoverReqs]) => {
             const docAlerts = pendingDocs.map(doc => ({
               type: 'document',
@@ -111,7 +111,7 @@ const AdminDashboard = () => {
     const handleDocumentStatus = async (docId, status) => {
       setDocLoading(true);
       try {
-        const res = await fetch(`http://localhost:4000/documents/${docId}`, {
+  const res = await fetch(`https://agent-pilgrims-api.onrender.com/documents/${docId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status })
@@ -131,25 +131,25 @@ const AdminDashboard = () => {
 
   useEffect(() => {
     // Fetch agents from mock API
-    fetch('http://localhost:4000/agents')
+  fetch('https://agent-pilgrims-api.onrender.com/agents')
       .then(res => res.json())
       .then(data => setAgents(data))
       .catch(() => setAgents([]));
 
       // Fetch all pilgrims from mock API
-      fetch('http://localhost:4000/pilgrims')
+  fetch('https://agent-pilgrims-api.onrender.com/pilgrims')
         .then(res => res.json())
         .then(data => setAllPilgrims(data))
         .catch(() => setAllPilgrims([]));
 
     // Fetch takeover requests from mock API
-    fetch('http://localhost:4000/takeoverRequests')
+  fetch('https://agent-pilgrims-api.onrender.com/takeoverRequests')
       .then(res => res.json())
       .then(data => setTakeoverRequests(data))
       .catch(() => setTakeoverRequests([]));
 
     // Fetch stats from mock API
-    fetch('http://localhost:4000/stats')
+  fetch('https://agent-pilgrims-api.onrender.com/stats')
       .then(res => res.json())
       .then(data => setStats(data))
       .catch(() => setStats({ totalRevenue: 0, bannedPilgrims: 0, activeRegistrations: 0 }));
@@ -168,7 +168,7 @@ const AdminDashboard = () => {
   // Add Agent: POST to API
   const handleAddAgent = async (newAgent: any) => {
     try {
-      const res = await fetch('http://localhost:4000/agents', {
+  const res = await fetch('https://agent-pilgrims-api.onrender.com/agents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newAgent)
@@ -188,7 +188,7 @@ const AdminDashboard = () => {
   // Approve/Reject Takeover Request: DELETE from API
   const handleApproveRequest = async (requestId: number) => {
     try {
-      const res = await fetch(`http://localhost:4000/takeoverRequests/${requestId}`, { method: 'DELETE' });
+  const res = await fetch(`https://agent-pilgrims-api.onrender.com/takeoverRequests/${requestId}`, { method: 'DELETE' });
       if (res.ok) {
         setTakeoverRequests(prev => prev.filter(req => req.id !== requestId));
         toast({ title: 'Request Approved', description: 'Registration takeover request has been approved.' });
@@ -202,7 +202,7 @@ const AdminDashboard = () => {
 
   const handleRejectRequest = async (requestId: number) => {
     try {
-      const res = await fetch(`http://localhost:4000/takeoverRequests/${requestId}`, { method: 'DELETE' });
+  const res = await fetch(`https://agent-pilgrims-api.onrender.com/takeoverRequests/${requestId}`, { method: 'DELETE' });
       if (res.ok) {
         setTakeoverRequests(prev => prev.filter(req => req.id !== requestId));
         toast({ title: 'Request Rejected', description: 'Registration takeover request has been rejected.', variant: 'destructive' });
@@ -218,7 +218,7 @@ const AdminDashboard = () => {
   const handleAgentAction = async (agentId: number, action: string) => {
     const newStatus = action === 'suspend' ? 'Suspended' : 'Active';
     try {
-      const res = await fetch(`http://localhost:4000/agents/${agentId}`, {
+  const res = await fetch(`https://agent-pilgrims-api.onrender.com/agents/${agentId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus })
@@ -692,7 +692,7 @@ const AdminDashboard = () => {
                           fileUrl,
                           fileType
                         };
-                        const res = await fetch('http://localhost:4000/messages', {
+                        const res = await fetch('https://agent-pilgrims-api.onrender.com/messages', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify(newMessage)
