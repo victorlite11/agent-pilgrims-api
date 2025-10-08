@@ -340,7 +340,9 @@ const AgentDashboard = () => {
           const payload = JSON.parse(ev.data);
           if (!payload || payload.type !== 'document' || !payload.document) return;
           // safer: re-fetch documents for this agent (backend will filter by agent token)
-          const res = await fetch(`${API_BASE_URL}/documents`, fetchOptions);
+          const tokenLocal = token;
+          const headers = tokenLocal ? { headers: { 'Authorization': `Bearer ${tokenLocal}` } } : {};
+          const res = await fetch(`${API_BASE_URL}/documents`, headers);
           if (res.ok) {
             const docs = await res.json();
             // only show documents for this agent's pilgrims
