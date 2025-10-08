@@ -41,7 +41,7 @@ const SystemReportsModal = ({ open, onClose }: SystemReportsModalProps) => {
         }
       })();
     }
-  }, [open]);
+  }, [open, toast]);
 
   return (
     <Dialog open={open} onOpenChange={onClose}>

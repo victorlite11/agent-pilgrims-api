@@ -31,7 +31,7 @@ const ManageBansModal = ({ open, onClose }: ManageBansModalProps) => {
         }
       })();
     }
-  }, [open]);
+  }, [open, toast]);
 
   const handleBanToggle = async (id: number, isBanned: boolean) => {
     const newStatus = isBanned ? "Active" : "Banned";

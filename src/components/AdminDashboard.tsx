@@ -149,7 +149,9 @@ const AdminDashboard = () => {
     };
 
   // fetch activities helper so we can refresh after actions
-  const fetchActivities = async () => {
+  const fetchActivities = useRef<(() => Promise<void>) | null>(null);
+  // create a stable function reference
+  fetchActivities.current = async () => {
     const acts = await fetchJsonSafe(`${API_BASE_URL}/activity-log`);
     setActivities(acts || []);
   };
@@ -213,8 +215,8 @@ const AdminDashboard = () => {
       const s = await fetchJsonSafe(`${API_BASE_URL}/stats`);
       setStats(s || { totalRevenue: 0, bannedPilgrims: 0, activeRegistrations: 0 });
 
-      // initial activity fetch
-      fetchActivities();
+  // initial activity fetch
+  fetchActivities.current && fetchActivities.current();
     })();
   }, []);
 
@@ -326,7 +328,7 @@ const AdminDashboard = () => {
       if (res.ok) {
         setAgents(prev => prev.map(a => a.id === agentId ? { ...a, status: 'Active' } : a));
         toast({ title: 'Agent Approved', description: 'Agent has been approved.' });
-  try { await fetch(`${API_BASE_URL}/activity-log`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: agentId, userType: 'agent', action: 'Approved', details: 'Agent account approved by admin' }) }); await fetchActivities(); } catch (e) {}
+  try { await fetch(`${API_BASE_URL}/activity-log`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: agentId, userType: 'agent', action: 'Approved', details: 'Agent account approved by admin' }) }); await (fetchActivities.current && fetchActivities.current()); } catch (e) {}
       } else {
         toast({ title: 'Error', description: 'Failed to approve agent.', variant: 'destructive' });
       }
@@ -346,7 +348,7 @@ const AdminDashboard = () => {
       if (res.ok) {
         setAgents(prev => prev.map(a => a.id === agentId ? { ...a, status: 'Denied' } : a));
         toast({ title: 'Agent Denied', description: 'Agent has been denied.' });
-  try { await fetch(`${API_BASE_URL}/activity-log`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: agentId, userType: 'agent', action: 'Denied', details: 'Agent account denied by admin' }) }); await fetchActivities(); } catch (e) {}
+  try { await fetch(`${API_BASE_URL}/activity-log`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: agentId, userType: 'agent', action: 'Denied', details: 'Agent account denied by admin' }) }); await (fetchActivities.current && fetchActivities.current()); } catch (e) {}
       } else {
         toast({ title: 'Error', description: 'Failed to deny agent.', variant: 'destructive' });
       }
@@ -363,7 +365,7 @@ const AdminDashboard = () => {
       if (res.ok) {
         setAgents(prev => prev.filter(a => a.id !== agentId));
         toast({ title: 'Agent Removed', description: 'Agent account has been removed.' });
-  try { await fetch(`${API_BASE_URL}/activity-log`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: agentId, userType: 'agent', action: 'Removed', details: 'Agent account removed by admin' }) }); await fetchActivities(); } catch (e) {}
+  try { await fetch(`${API_BASE_URL}/activity-log`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: agentId, userType: 'agent', action: 'Removed', details: 'Agent account removed by admin' }) }); await (fetchActivities.current && fetchActivities.current()); } catch (e) {}
       } else {
         toast({ title: 'Error', description: 'Failed to remove agent.', variant: 'destructive' });
       }
@@ -379,8 +381,8 @@ const AdminDashboard = () => {
       if (res.ok) {
         setTakeoverRequests(prev => prev.filter(req => req.id !== requestId));
         toast({ title: 'Request Approved', description: 'Registration takeover request has been approved.' });
-        // log activity
-  try { await fetch(`${API_BASE_URL}/activity-log`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: 0, userType: 'admin', action: 'Approved takeover request', details: `Request ${requestId}` }) }); await fetchActivities(); } catch (e) {}
+    // log activity
+  try { await fetch(`${API_BASE_URL}/activity-log`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: 0, userType: 'admin', action: 'Approved takeover request', details: `Request ${requestId}` }) }); await (fetchActivities.current && fetchActivities.current()); } catch (e) {}
       } else {
         toast({ title: 'Error', description: 'Failed to approve request.', variant: 'destructive' });
       }
@@ -395,7 +397,7 @@ const AdminDashboard = () => {
       if (res.ok) {
         setTakeoverRequests(prev => prev.filter(req => req.id !== requestId));
         toast({ title: 'Request Rejected', description: 'Registration takeover request has been rejected.', variant: 'destructive' });
-  try { await fetch(`${API_BASE_URL}/activity-log`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: 0, userType: 'admin', action: 'Rejected takeover request', details: `Request ${requestId}` }) }); await fetchActivities(); } catch (e) {}
+  try { await fetch(`${API_BASE_URL}/activity-log`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: 0, userType: 'admin', action: 'Rejected takeover request', details: `Request ${requestId}` }) }); await (fetchActivities.current && fetchActivities.current()); } catch (e) {}
       } else {
         toast({ title: 'Error', description: 'Failed to reject request.', variant: 'destructive' });
       }

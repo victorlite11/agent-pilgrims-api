@@ -20,7 +20,6 @@ const AgentDashboard = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const token = localStorage.getItem('agent_token');
-  const fetchOptions = token ? { headers: { 'Authorization': `Bearer ${token}` } } : {};
 
   // Auth check
   useEffect(() => {
@@ -165,10 +164,10 @@ const AgentDashboard = () => {
           location: "Lagos, Nigeria"
         });
       });
-  // Fetch only pilgrims assigned to this agent (include token as query param for SSE and for servers that don't accept Authorization header)
-  const pilgrimsUrl = `${API_BASE_URL}/pilgrims?agentId=${agentId}`;
-  const fetchOptions = token ? { headers: { 'Authorization': `Bearer ${token}` } } : {};
-  fetch(pilgrimsUrl, fetchOptions)
+    // Fetch only pilgrims assigned to this agent (include token as query param for SSE and for servers that don't accept Authorization header)
+    const pilgrimsUrl = `${API_BASE_URL}/pilgrims?agentId=${agentId}`;
+    const headers = token ? { headers: { 'Authorization': `Bearer ${token}` } } : {};
+    fetch(pilgrimsUrl, headers)
       .then(res => res.json())
       .then(data => {
         try {
@@ -189,7 +188,7 @@ const AgentDashboard = () => {
         setPilgrims([]);
       });
     setDocLoading(false);
-  }, []);
+  }, [navigate, token]);
 
   // fetch activity log
   useEffect(() => {
@@ -358,21 +357,23 @@ const AgentDashboard = () => {
       // ignore SSE errors
     }
     return () => { if (documentsEventSourceRef.current) try { documentsEventSourceRef.current.close(); } catch (e) {} documentsEventSourceRef.current = null; };
-  }, [agentData?.id]);
+  }, [agentData?.id, pilgrims, token, toast]);
 
   // Fetch documents for agent's pilgrims
   useEffect(() => {
     if (!agentData || !pilgrims.length) return;
     setDocLoading(true);
-  fetch(`${API_BASE_URL}/documents`, fetchOptions)
-    .then(res => res.json())
+    const tokenLocal = token;
+    const headers = tokenLocal ? { headers: { 'Authorization': `Bearer ${tokenLocal}` } } : {};
+    fetch(`${API_BASE_URL}/documents`, headers)
+      .then(res => res.json())
       .then(data => {
         const pilgrimIds = pilgrims.map((p: any) => p.id);
         setDocuments(data.filter((doc: any) => pilgrimIds.includes(doc.pilgrimId)));
         setDocLoading(false);
       })
       .catch(() => setDocLoading(false));
-  }, [agentData, pilgrims]);
+  }, [agentData, pilgrims, token]);
   // Utility to get status badge color
   const getStatusColor = (status: string) => {
     switch (status) {

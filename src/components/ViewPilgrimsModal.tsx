@@ -31,7 +31,7 @@ const ViewPilgrimsModal = ({ open, onClose }: ViewPilgrimsModalProps) => {
         }
       })();
     }
-  }, [open]);
+  }, [open, toast]);
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
