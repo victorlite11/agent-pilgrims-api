@@ -20,7 +20,8 @@ import {
   DollarSign,
   MessageCircle,
   Paperclip,
-  Loader2
+  Loader2,
+  Download
 } from "lucide-react";
 import pilgrimIcon from "@/assets/pilgrim-icon.jpg";
 import AddAgentModal from "./AddAgentModal";
@@ -29,25 +30,49 @@ import { useToast } from "@/hooks/use-toast";
 import ViewPilgrimsModal from "./ViewPilgrimsModal";
 import ManageBansModal from "./ManageBansModal";
 import SystemReportsModal from "./SystemReportsModal";
+import EditPilgrimModal from "./EditPilgrimModal";
+import { API_BASE_URL } from "@/lib/api";
 
 const AdminDashboard = () => {
   const [settingsModal, setSettingsModal] = useState("");
-  const [apiEndpoint, setApiEndpoint] = useState("https://agent-pilgrims-api.onrender.com");
+  const [apiEndpoint, setApiEndpoint] = useState(API_BASE_URL);
   const [theme, setTheme] = useState("light");
 
+  const { toast } = useToast();
+  const navigate = useNavigate();
+
+  // Auth check
   useEffect(() => {
+    const token = localStorage.getItem("admin_token");
+    if (!token) {
+      navigate("/admin-login");
+      return;
+    }
     document.body.classList.remove("theme-light", "theme-dark", "theme-gold");
     document.body.classList.add(`theme-${theme}`);
-  }, [theme]);
+  }, [theme, navigate]);
+
   const [securityOption, setSecurityOption] = useState(false);
   const [profileModal, setProfileModal] = useState("");
   const [selectedProfile, setSelectedProfile] = useState<any>(null);
   const [selectedDocs, setSelectedDocs] = useState([]);
   const [selectedAgents, setSelectedAgents] = useState([]);
-  const { toast } = useToast();
-  const navigate = useNavigate();
   const [agents, setAgents] = useState([]);
   const [allPilgrims, setAllPilgrims] = useState([]);
+  // Safe fetch helper to avoid parsing HTML error pages as JSON
+  const fetchJsonSafe = async (url: string) => {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      try {
+        return await res.json();
+      } catch (e) {
+        return null;
+      }
+    } catch (e) {
+      return null;
+    }
+  };
   const [takeoverRequests, setTakeoverRequests] = useState([]);
   const [stats, setStats] = useState({ totalRevenue: 0, bannedPilgrims: 0, activeRegistrations: 0 });
   const [showPilgrimsModal, setShowPilgrimsModal] = useState(false);
@@ -68,50 +93,44 @@ const AdminDashboard = () => {
   const [uploading, setUploading] = useState(false);
   const [isTargetTyping, setIsTargetTyping] = useState(false);
   const chatBoxRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-      setDocLoading(true);
-  fetch('https://agent-pilgrims-api.onrender.com/documents')
-        .then(res => res.json())
-        .then(data => setDocuments(data))
-        .catch(() => setDocuments([]))
-        .finally(() => setDocLoading(false));
-
-        setActivityLoading(true);
-  fetch('https://agent-pilgrims-api.onrender.com/activities')
-          .then(res => res.json())
-          .then(data => setActivities(data))
-          .catch(() => setActivities([]))
-          .finally(() => setActivityLoading(false));
-
-        // Fetch notifications (new documents, takeover requests)
-        const fetchNotifications = () => {
-          Promise.all([
-            fetch('https://agent-pilgrims-api.onrender.com/documents?status=Pending').then(res => res.json()),
-            fetch('https://agent-pilgrims-api.onrender.com/takeoverRequests').then(res => res.json())
-          ]).then(([pendingDocs, takeoverReqs]) => {
-            const docAlerts = pendingDocs.map(doc => ({
-              type: 'document',
-              message: `New document uploaded by ${doc.pilgrimId ? 'Pilgrim #' + doc.pilgrimId : doc.agentId ? 'Agent #' + doc.agentId : 'Unknown'}`,
-              date: doc.date
-            }));
-            const takeoverAlerts = takeoverReqs.map(req => ({
-              type: 'takeover',
-              message: `New takeover request for Pilgrim: ${req.pilgrimName}`,
-              date: req.date
-            }));
-            setNotifications([...docAlerts, ...takeoverAlerts]);
-          });
-        };
-        fetchNotifications();
-        const interval = setInterval(fetchNotifications, 10000); // poll every 10s
-        return () => clearInterval(interval);
+  const [selectedChatPilgrimId, setSelectedChatPilgrimId] = useState<number | null>(null);
+  const [selectedChatAgentId, setSelectedChatAgentId] = useState<number | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editPilgrim, setEditPilgrim] = useState<any>(null);
+  useEffect(() => {
+    // Fetch notifications (new documents, takeover requests)
+      const fetchNotifications = async () => {
+        // backend exposes /documents (no server-side status filter implemented), so fetch all and filter client-side
+        const allDocs = await fetchJsonSafe(`${API_BASE_URL}/documents`);
+        const takeoverReqs = await fetchJsonSafe(`${API_BASE_URL}/takeoverRequests`);
+        const pendingDocs = (allDocs || []).filter((doc: any) => (doc.status || '').toString().toLowerCase() === 'pending');
+        const docAlerts = pendingDocs.map((doc: any) => ({
+          type: 'document',
+          message: `New document uploaded by ${doc.pilgrimId ? 'Pilgrim #' + doc.pilgrimId : doc.agentId ? 'Agent #' + doc.agentId : 'Unknown'}`,
+          date: doc.date
+        }));
+        const takeoverAlerts = (takeoverReqs || []).map((req: any) => ({
+          type: 'takeover',
+          message: `New takeover request for Pilgrim: ${req.pilgrimName || req.pilgrimId || 'Unknown'}`,
+          date: req.date
+        }));
+        // combine and sort newest-first by date if available
+        const combined = [...docAlerts, ...takeoverAlerts].sort((a: any, b: any) => {
+          const da = a.date ? new Date(a.date).getTime() : 0;
+          const db = b.date ? new Date(b.date).getTime() : 0;
+          return db - da;
+        });
+        setNotifications(combined);
+      };
+      fetchNotifications();
+      const interval = setInterval(fetchNotifications, 10000); // poll every 10s
+      return () => clearInterval(interval);
     }, []);
 
     const handleDocumentStatus = async (docId, status) => {
       setDocLoading(true);
       try {
-  const res = await fetch(`https://agent-pilgrims-api.onrender.com/documents/${docId}`, {
+  const res = await fetch(`${API_BASE_URL}/documents/${docId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status })
@@ -129,31 +148,133 @@ const AdminDashboard = () => {
       }
     };
 
+  // fetch activities helper so we can refresh after actions
+  const fetchActivities = async () => {
+    const acts = await fetchJsonSafe(`${API_BASE_URL}/activity-log`);
+    setActivities(acts || []);
+  };
+
+  // SSE for activity log
   useEffect(() => {
-    // Fetch agents from mock API
-  fetch('https://agent-pilgrims-api.onrender.com/agents')
-      .then(res => res.json())
-      .then(data => setAgents(data))
-      .catch(() => setAgents([]));
-
-      // Fetch all pilgrims from mock API
-  fetch('https://agent-pilgrims-api.onrender.com/pilgrims')
-        .then(res => res.json())
-        .then(data => setAllPilgrims(data))
-        .catch(() => setAllPilgrims([]));
-
-    // Fetch takeover requests from mock API
-  fetch('https://agent-pilgrims-api.onrender.com/takeoverRequests')
-      .then(res => res.json())
-      .then(data => setTakeoverRequests(data))
-      .catch(() => setTakeoverRequests([]));
-
-    // Fetch stats from mock API
-  fetch('https://agent-pilgrims-api.onrender.com/stats')
-      .then(res => res.json())
-      .then(data => setStats(data))
-      .catch(() => setStats({ totalRevenue: 0, bannedPilgrims: 0, activeRegistrations: 0 }));
+    let es: EventSource | null = null;
+    const receivedIds = new Set();
+    try {
+      es = new EventSource(`${API_BASE_URL}/activity-log/stream`);
+      es.onmessage = (ev) => {
+        try {
+          const a = JSON.parse(ev.data);
+          if (!a || !a.id) return;
+          if (receivedIds.has(a.id)) return;
+          receivedIds.add(a.id);
+          setActivities(prev => [a, ...prev]);
+        } catch (e) { /* ignore */ }
+      };
+      es.onerror = () => { try { es && es.close(); } catch (e) {} };
+    } catch (e) {
+      // ignore
+    }
+    return () => { if (es) try { es.close(); } catch (e) {} };
   }, []);
+
+  // SSE for document events (admin: global)
+  useEffect(() => {
+    let es: EventSource | null = null;
+    try {
+      es = new EventSource(`${API_BASE_URL}/documents/stream?agentId=0`); // admin opens a global-ish stream; backend allows agentId or pilgrimId - agentId=0 used as wildcard here
+      es.onmessage = async (ev) => {
+        try {
+          const payload = JSON.parse(ev.data);
+          if (!payload || payload.type !== 'document' || !payload.document) return;
+          // safer: re-fetch authoritative documents list
+          const docs = await fetchJsonSafe(`${API_BASE_URL}/documents`);
+          setDocuments(docs || []);
+          // notify admins
+          setNotifications(prev => [{ type: 'document', message: `New document uploaded by Pilgrim #${payload.document.pilgrimId}`, date: payload.document.date }, ...prev]);
+        } catch (e) { /* ignore */ }
+      };
+      es.onerror = () => { try { es && es.close(); } catch (e) {} };
+    } catch (e) {
+      // ignore
+    }
+    return () => { if (es) try { es.close(); } catch (e) {} };
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      const fetchedAgents = await fetchJsonSafe(`${API_BASE_URL}/agents`);
+      setAgents(fetchedAgents || []);
+
+      const pilgrims = await fetchJsonSafe(`${API_BASE_URL}/pilgrims`);
+      setAllPilgrims(pilgrims || []);
+
+      const takeovers = await fetchJsonSafe(`${API_BASE_URL}/takeoverRequests`);
+      setTakeoverRequests(takeovers || []);
+
+      const s = await fetchJsonSafe(`${API_BASE_URL}/stats`);
+      setStats(s || { totalRevenue: 0, bannedPilgrims: 0, activeRegistrations: 0 });
+
+      // initial activity fetch
+      fetchActivities();
+    })();
+  }, []);
+
+  // Use Server-Sent Events for admin chat (real-time) instead of polling
+  useEffect(() => {
+    if (!openChat) return;
+    let es: EventSource | null = null;
+
+    const doInitialFetch = async () => {
+      try {
+        let url = `${API_BASE_URL}/messages`;
+        if (openChat === 'pilgrim') {
+          if (!selectedChatPilgrimId) return;
+          url += `?pilgrimId=${selectedChatPilgrimId}`;
+        } else if (openChat === 'agent') {
+          if (!selectedChatAgentId) return;
+          url += `?agentId=${selectedChatAgentId}`;
+        }
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const data = await res.json();
+        const mapped = data.map((m: any) => ({ id: m.id, from: m.sender || m.from, message: m.message, date: m.timestamp ? new Date(m.timestamp).toLocaleString() : (m.date || ''), fileUrl: m.fileUrl, fileType: m.fileType }));
+        setChatMessages(mapped);
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    const startSSE = () => {
+      try {
+        let streamUrl = `${API_BASE_URL}/messages/stream`;
+        if (openChat === 'pilgrim') streamUrl += `?pilgrimId=${selectedChatPilgrimId}`;
+        else if (openChat === 'agent') streamUrl += `?agentId=${selectedChatAgentId}`;
+        else streamUrl += ``; // admin team chat: no query
+
+        es = new EventSource(streamUrl);
+        es.onmessage = (ev) => {
+          try {
+            const m = JSON.parse(ev.data);
+            const mapped = { id: m.id, from: m.sender || m.from, message: m.message, date: m.timestamp ? new Date(m.timestamp).toLocaleString() : (m.date || ''), fileUrl: m.fileUrl, fileType: m.fileType };
+            setChatMessages(prev => prev.find(p => p.id === mapped.id) ? prev : [...prev, mapped]);
+          } catch (err) {
+            // ignore parse errors
+          }
+        };
+        es.onerror = (err) => {
+          // If SSE fails, close and rely on initial fetch (no automatic backoff here)
+          try { es && es.close(); } catch (e) {}
+          es = null;
+        };
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    // perform initial fetch then start SSE
+    doInitialFetch().then(() => startSSE());
+
+    return () => { if (es) try { es.close(); } catch (e) {} };
+  }, [openChat, selectedChatPilgrimId, selectedChatAgentId]);
 
   // Dynamic admin data
   const adminStats = {
@@ -168,16 +289,25 @@ const AdminDashboard = () => {
   // Add Agent: POST to API
   const handleAddAgent = async (newAgent: any) => {
     try {
-  const res = await fetch('https://agent-pilgrims-api.onrender.com/agents', {
+      // Backend expects a simple agent object: { name, email, password }
+      const payload = {
+        name: newAgent.name || newAgent.companyName || 'Unnamed Agency',
+        email: newAgent.email,
+        password: Math.random().toString(36).slice(2, 10)
+      };
+      const res = await fetch(`${API_BASE_URL}/agents`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newAgent)
+        body: JSON.stringify(payload)
       });
       if (res.ok) {
         const created = await res.json();
-        setAgents(prev => [...prev, created]);
+        const createdAgent = { id: created.id, name: payload.name, email: payload.email, pilgrims: 0, joined: new Date().toISOString().split('T')[0] };
+        setAgents(prev => [...prev, createdAgent]);
         toast({ title: 'Agent Added', description: 'New agent has been added.' });
       } else {
+        const text = await res.text().catch(() => '');
+        console.error('[ADD AGENT ERROR]', res.status, text);
         toast({ title: 'Error', description: 'Failed to add agent.', variant: 'destructive' });
       }
     } catch {
@@ -185,13 +315,72 @@ const AdminDashboard = () => {
     }
   };
 
+  // Approve an agent (set status to Active)
+  const handleApproveAgent = async (agentId: number) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/agents/${agentId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'Active' })
+      });
+      if (res.ok) {
+        setAgents(prev => prev.map(a => a.id === agentId ? { ...a, status: 'Active' } : a));
+        toast({ title: 'Agent Approved', description: 'Agent has been approved.' });
+  try { await fetch(`${API_BASE_URL}/activity-log`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: agentId, userType: 'agent', action: 'Approved', details: 'Agent account approved by admin' }) }); await fetchActivities(); } catch (e) {}
+      } else {
+        toast({ title: 'Error', description: 'Failed to approve agent.', variant: 'destructive' });
+      }
+    } catch {
+      toast({ title: 'Error', description: 'Failed to approve agent.', variant: 'destructive' });
+    }
+  };
+
+  // Deny an agent (set status to Denied)
+  const handleDenyAgent = async (agentId: number) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/agents/${agentId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'Denied' })
+      });
+      if (res.ok) {
+        setAgents(prev => prev.map(a => a.id === agentId ? { ...a, status: 'Denied' } : a));
+        toast({ title: 'Agent Denied', description: 'Agent has been denied.' });
+  try { await fetch(`${API_BASE_URL}/activity-log`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: agentId, userType: 'agent', action: 'Denied', details: 'Agent account denied by admin' }) }); await fetchActivities(); } catch (e) {}
+      } else {
+        toast({ title: 'Error', description: 'Failed to deny agent.', variant: 'destructive' });
+      }
+    } catch {
+      toast({ title: 'Error', description: 'Failed to deny agent.', variant: 'destructive' });
+    }
+  };
+
+  // Remove (delete) an agent account
+  const handleRemoveAgent = async (agentId: number) => {
+    if (!confirm('Are you sure you want to remove this agent account?')) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/agents/${agentId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setAgents(prev => prev.filter(a => a.id !== agentId));
+        toast({ title: 'Agent Removed', description: 'Agent account has been removed.' });
+  try { await fetch(`${API_BASE_URL}/activity-log`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: agentId, userType: 'agent', action: 'Removed', details: 'Agent account removed by admin' }) }); await fetchActivities(); } catch (e) {}
+      } else {
+        toast({ title: 'Error', description: 'Failed to remove agent.', variant: 'destructive' });
+      }
+    } catch {
+      toast({ title: 'Error', description: 'Failed to remove agent.', variant: 'destructive' });
+    }
+  };
+
   // Approve/Reject Takeover Request: DELETE from API
   const handleApproveRequest = async (requestId: number) => {
     try {
-  const res = await fetch(`https://agent-pilgrims-api.onrender.com/takeoverRequests/${requestId}`, { method: 'DELETE' });
+  const res = await fetch(`${API_BASE_URL}/takeoverRequests/${requestId}`, { method: 'DELETE' });
       if (res.ok) {
         setTakeoverRequests(prev => prev.filter(req => req.id !== requestId));
         toast({ title: 'Request Approved', description: 'Registration takeover request has been approved.' });
+        // log activity
+  try { await fetch(`${API_BASE_URL}/activity-log`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: 0, userType: 'admin', action: 'Approved takeover request', details: `Request ${requestId}` }) }); await fetchActivities(); } catch (e) {}
       } else {
         toast({ title: 'Error', description: 'Failed to approve request.', variant: 'destructive' });
       }
@@ -202,10 +391,11 @@ const AdminDashboard = () => {
 
   const handleRejectRequest = async (requestId: number) => {
     try {
-  const res = await fetch(`https://agent-pilgrims-api.onrender.com/takeoverRequests/${requestId}`, { method: 'DELETE' });
+  const res = await fetch(`${API_BASE_URL}/takeoverRequests/${requestId}`, { method: 'DELETE' });
       if (res.ok) {
         setTakeoverRequests(prev => prev.filter(req => req.id !== requestId));
         toast({ title: 'Request Rejected', description: 'Registration takeover request has been rejected.', variant: 'destructive' });
+  try { await fetch(`${API_BASE_URL}/activity-log`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: 0, userType: 'admin', action: 'Rejected takeover request', details: `Request ${requestId}` }) }); await fetchActivities(); } catch (e) {}
       } else {
         toast({ title: 'Error', description: 'Failed to reject request.', variant: 'destructive' });
       }
@@ -218,7 +408,7 @@ const AdminDashboard = () => {
   const handleAgentAction = async (agentId: number, action: string) => {
     const newStatus = action === 'suspend' ? 'Suspended' : 'Active';
     try {
-  const res = await fetch(`https://agent-pilgrims-api.onrender.com/agents/${agentId}`, {
+  const res = await fetch(`${API_BASE_URL}/agents/${agentId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus })
@@ -293,7 +483,7 @@ const AdminDashboard = () => {
                   </div>
                 )}
               </div>
-              <Button variant="outline" size="sm" onClick={() => navigate('/admin-login')}>
+              <Button variant="outline" size="sm" onClick={() => { localStorage.removeItem('admin_token'); navigate('/admin-login'); }}>
                 <LogOut className="mr-2 h-4 w-4" />
                 Sign Out
               </Button>
@@ -637,10 +827,37 @@ const AdminDashboard = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  <Button variant="outline" size="sm" onClick={() => { setOpenChat("agent"); setChatMessages([]); }}>Chat with Agent</Button>
-                  <Button variant="outline" size="sm" onClick={() => { setOpenChat("pilgrim"); setChatMessages([]); }}>Chat with Pilgrim</Button>
-                  <Button variant="outline" size="sm" onClick={() => { setOpenChat("admin"); setChatMessages([]); }}>Internal Admin Chat</Button>
+                  <Button variant="outline" size="sm" onClick={() => { setOpenChat("agent"); setChatMessages([]); setSelectedChatAgentId((agents && agents[0] && agents[0].id) || null); }}>Chat with Agent</Button>
+                  <Button variant="outline" size="sm" onClick={() => { setOpenChat("pilgrim"); setChatMessages([]); setSelectedChatPilgrimId((allPilgrims && allPilgrims[0] && allPilgrims[0].id) || null); }}>Chat with Pilgrim</Button>
+                  <Button variant="outline" size="sm" onClick={() => { setOpenChat("admin"); setChatMessages([]); setSelectedChatAgentId(null); setSelectedChatPilgrimId(null); }}>Internal Admin Chat</Button>
                 </div>
+                {/* select chat target (pilgrim/agent) when chat is opened */}
+                {openChat && (
+                  <div className="mt-2">
+                    {openChat === 'pilgrim' && (
+                      <select
+                        value={selectedChatPilgrimId ?? ''}
+                        onChange={e => setSelectedChatPilgrimId(Number(e.target.value))}
+                        className="border rounded px-2 py-1 text-sm"
+                      >
+                        {(allPilgrims || []).map((p: any) => (
+                          <option key={p.id} value={p.id}>{p.name || `Pilgrim #${p.id}`}</option>
+                        ))}
+                      </select>
+                    )}
+                    {openChat === 'agent' && (
+                      <select
+                        value={selectedChatAgentId ?? ''}
+                        onChange={e => setSelectedChatAgentId(Number(e.target.value))}
+                        className="border rounded px-2 py-1 text-sm"
+                      >
+                        {(agents || []).map((a: any) => (
+                          <option key={a.id} value={a.id}>{a.name || `Agent #${a.id}`}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                )}
                 {openChat && (
                   <div className="mt-4 border rounded p-3 bg-muted">
                     <div className="font-bold mb-2">{openChat === "agent" ? "Agent Chat" : openChat === "pilgrim" ? "Pilgrim Chat" : "Admin Team Chat"}</div>
@@ -679,29 +896,49 @@ const AdminDashboard = () => {
                         let fileUrl = null;
                         let fileType = null;
                         if (attachment) {
-                          fileUrl = URL.createObjectURL(attachment);
+                          // Upload file to backend
+                          try {
+                            const formData = new FormData();
+                            formData.append('file', attachment);
+                            const res = await fetch(`${API_BASE_URL}/upload`, {
+                              method: 'POST',
+                              body: formData
+                            });
+                            const data = await res.json();
+                            fileUrl = data.fileUrl;
+                          } catch (e) {
+                            toast({ title: 'Upload failed', description: 'Could not upload file.', variant: 'destructive' });
+                            setUploading(false);
+                            return;
+                          }
                           fileType = attachment.type.startsWith('image') ? 'image' : (attachment.type === 'application/pdf' ? 'pdf' : null);
                         }
-                        const newMessage = {
-                          from: 'Admin',
+                        const payload: any = {
+                          sender: 'Admin',
                           message: chatInput,
-                          date: new Date().toLocaleString(),
-                          agentId: openChat === 'agent' ? 1 : undefined,
-                          pilgrimId: openChat === 'pilgrim' ? 1 : undefined,
-                          read: false,
-                          fileUrl,
-                          fileType
+                          fileUrl: fileUrl || null,
+                          fileType: fileType || null
                         };
-                        const res = await fetch('https://agent-pilgrims-api.onrender.com/messages', {
+                        // attach explicit selected target ids
+                        if (openChat === 'pilgrim' && selectedChatPilgrimId) payload.pilgrimId = selectedChatPilgrimId;
+                        if (openChat === 'agent' && selectedChatAgentId) payload.agentId = selectedChatAgentId;
+                        const res = await fetch(`${API_BASE_URL}/messages`, {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify(newMessage)
+                          body: JSON.stringify(payload)
                         });
                         if (res.ok) {
                           setChatInput("");
                           setAttachment(null);
                           setUploading(false);
-                          setChatMessages(prev => [...prev, { ...newMessage, id: Date.now() }]);
+                          setChatMessages(prev => [...prev, { ...{
+                            id: Date.now(),
+                            from: payload.sender,
+                            message: payload.message,
+                            date: new Date().toLocaleString(),
+                            fileUrl: payload.fileUrl,
+                            fileType: payload.fileType
+                          }}]);
                         } else {
                           setUploading(false);
                           toast({ title: 'Error', description: 'Failed to send message.', variant: 'destructive' });
@@ -730,7 +967,14 @@ const AdminDashboard = () => {
                       {attachment && (
                         <span className="text-xs text-muted-foreground ml-1">{attachment.name}</span>
                       )}
-                      <Button type="submit" size="sm" disabled={uploading}>{uploading ? <Loader2 className="animate-spin h-4 w-4" /> : 'Send'}</Button>
+                      <div className="relative flex items-center">
+                        <Button type="submit" size="sm" disabled={uploading || (openChat === 'pilgrim' && !selectedChatPilgrimId) || (openChat === 'agent' && !selectedChatAgentId)}>
+                          {uploading ? <Loader2 className="animate-spin h-4 w-4" /> : 'Send'}
+                        </Button>
+                        {((openChat === 'pilgrim' && !selectedChatPilgrimId) || (openChat === 'agent' && !selectedChatAgentId)) && !uploading && (
+                          <span className="absolute left-full ml-2 px-2 py-1 bg-black text-white text-xs rounded shadow z-10 whitespace-nowrap">Select a target to enable Send</span>
+                        )}
+                      </div>
                       <Button type="button" size="sm" variant="ghost" onClick={() => setOpenChat("")}>Close</Button>
                     </form>
                     {/* Typing indicator */}
@@ -776,31 +1020,34 @@ const AdminDashboard = () => {
                   <div className="text-center py-8 text-muted-foreground">Loading activities...</div>
                 ) : (
                   <div className="space-y-3 max-h-[350px] overflow-y-auto">
-                    {activities.filter(a =>
-                      a.action.toLowerCase().includes(activitySearch.toLowerCase()) ||
-                      a.userName.toLowerCase().includes(activitySearch.toLowerCase()) ||
-                      (a.details && a.details.toLowerCase().includes(activitySearch.toLowerCase()))
-                    ).length === 0 && (
-                      <div className="text-center py-8 text-muted-foreground">No activity records found.</div>
-                    )}
-                    {activities.filter(a =>
-                      a.action.toLowerCase().includes(activitySearch.toLowerCase()) ||
-                      a.userName.toLowerCase().includes(activitySearch.toLowerCase()) ||
-                      (a.details && a.details.toLowerCase().includes(activitySearch.toLowerCase()))
-                    ).map((activity) => (
-                      <div key={activity.id} className="p-3 border rounded-lg flex flex-col gap-1">
-                        <div className="flex justify-between items-center">
-                          <span className="font-medium text-foreground">{activity.action}</span>
-                          <span className="text-xs text-muted-foreground">{activity.date}</span>
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          By: {activity.userType} #{activity.userId} ({activity.userName})
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          Details: {activity.details}
-                        </div>
-                      </div>
-                    ))}
+                    {(() => {
+                      const needle = (activitySearch || '').toString().toLowerCase();
+                      const filteredActivities = (activities || []).filter(a => {
+                        const act = (a.action || '').toString().toLowerCase();
+                        const user = (a.userName || '').toString().toLowerCase();
+                        const details = (a.details || '').toString().toLowerCase();
+                        return act.includes(needle) || user.includes(needle) || details.includes(needle);
+                      });
+                      if (filteredActivities.length === 0) {
+                        return <div className="text-center py-8 text-muted-foreground">No activity records found.</div>;
+                      }
+                      return filteredActivities.map((activity) => {
+                        return (
+                          <div key={activity.id} className="p-3 border rounded-lg flex flex-col gap-1">
+                            <div className="flex justify-between items-center">
+                              <span className="font-medium text-foreground">{activity.action}</span>
+                              <span className="text-xs text-muted-foreground">{activity.date}</span>
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              By: {activity.userType} #{activity.userId} ({activity.userName})
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              Details: {activity.details}
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
                   </div>
                 )}
               </CardContent>
@@ -908,6 +1155,9 @@ const AdminDashboard = () => {
                         >
                           {agent.status === "Active" ? "Suspend" : "Activate"}
                         </Button>
+                        <Button size="sm" variant="default" onClick={() => handleApproveAgent(agent.id)} disabled={agent.status === 'Active'}>Approve</Button>
+                        <Button size="sm" variant="outline" onClick={() => handleDenyAgent(agent.id)} disabled={agent.status === 'Denied'}>Deny</Button>
+                        <Button size="sm" variant="destructive" onClick={() => handleRemoveAgent(agent.id)}>Remove</Button>
                       </div>
                     </div>
                   ))}
@@ -990,7 +1240,7 @@ const AdminDashboard = () => {
                   System Reports
                 </Button>
                 <SystemReportsModal open={showReportsModal} onClose={() => setShowReportsModal(false)} />
-                <Button variant="outline" className="h-16 flex flex-col">
+                <Button variant="outline" className="h-16 flex flex-col" onClick={() => setSettingsModal('api')}>
                   <RefreshCw className="h-6 w-6 mb-2" />
                   System Settings
                 </Button>

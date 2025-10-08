@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { API_BASE_URL } from "@/lib/api";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 
 interface ManageBansModalProps {
   open: boolean;
@@ -10,25 +12,41 @@ interface ManageBansModalProps {
 const ManageBansModal = ({ open, onClose }: ManageBansModalProps) => {
   const [pilgrims, setPilgrims] = useState([]);
   const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (open) {
       setLoading(true);
-  fetch("https://agent-pilgrims-api.onrender.com/pilgrims")
-        .then((res) => res.json())
-        .then((data) => setPilgrims(data))
-        .finally(() => setLoading(false));
+      (async () => {
+        try {
+          const res = await fetch(`${API_BASE_URL}/pilgrims`);
+          if (!res.ok) throw new Error('Failed to fetch pilgrims');
+          const data = await res.json();
+          setPilgrims(data || []);
+        } catch (e: any) {
+          setPilgrims([]);
+          toast({ title: 'Error', description: 'Unable to load pilgrims for bans.', variant: 'destructive' });
+        } finally {
+          setLoading(false);
+        }
+      })();
     }
   }, [open]);
 
   const handleBanToggle = async (id: number, isBanned: boolean) => {
     const newStatus = isBanned ? "Active" : "Banned";
-  await fetch(`https://agent-pilgrims-api.onrender.com/pilgrims/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: newStatus })
-    });
-    setPilgrims((prev: any) => prev.map((p: any) => p.id === id ? { ...p, status: newStatus } : p));
+    try {
+      const res = await fetch(`${API_BASE_URL}/pilgrims/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (!res.ok) throw new Error('Failed to update status');
+      setPilgrims((prev: any) => prev.map((p: any) => p.id === id ? { ...p, status: newStatus } : p));
+      toast({ title: 'Success', description: `Pilgrim ${isBanned ? 'unbanned' : 'banned'}.` });
+    } catch (e) {
+      toast({ title: 'Error', description: 'Failed to update ban status.', variant: 'destructive' });
+    }
   };
 
   return (

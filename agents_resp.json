@@ -1,0 +1,13 @@
+﻿{
+    "value":  [
+                  {
+                      "id":  1,
+                      "name":  "agent",
+                      "email":  "agent@example.com",
+                      "password":  "$2b$10$yrK0NV04eKS36cRuD/8DxOQdBl6lI1AmqdpXbH.gPB1VxEnegATKW",
+                      "status":  null,
+                      "joined":  null
+                  }
+              ],
+    "Count":  1
+}

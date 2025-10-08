@@ -64,8 +64,10 @@
   },
   "pilgrims": [
     {
-      "id": "1",
+      "id": 1,
       "name": "John Anderson",
+      "email": "pilgrim1@example.com",
+      "password": "password123",
       "nin": "123-45-6789",
       "status": "Documents Pending",
       "agentId": 2,

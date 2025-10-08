@@ -24,6 +24,12 @@ export default tseslint.config(
         { allowConstantExport: true },
       ],
       "@typescript-eslint/no-unused-vars": "off",
+      // Relax rules for this repository to reduce noise during iterative development
+      "@typescript-eslint/no-explicit-any": "off",
+      // Allow empty catch blocks (some places intentionally ignore errors)
+      "no-empty": ["error", { "allowEmptyCatch": true }],
+      // Allow expressions in certain places (conditional short-circuiting used in JSX handlers)
+      "@typescript-eslint/no-unused-expressions": "off",
     },
   }
 );

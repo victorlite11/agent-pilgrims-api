@@ -1,0 +1,8 @@
+: connected
+
+data: {"id":5,"userId":4,"userType":"admin","action":"Approve agent","details":"Approved via smoke test","date":"2025-10-08T14:33:28.904Z"}
+
+data: {"id":6,"userId":4,"userType":"admin","action":"Deny agent","details":"Denied via smoke test","date":"2025-10-08T14:33:29.952Z"}
+
+data: {"id":7,"userId":4,"userType":"admin","action":"Remove agent","details":"Removed via smoke test","date":"2025-10-08T14:33:30.992Z"}
+

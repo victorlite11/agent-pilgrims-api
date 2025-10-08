@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ArrowLeft, Shield, Users, FileCheck } from "lucide-react";
 import pilgrimIcon from "@/assets/pilgrim-icon.jpg";
+import { API_BASE_URL } from "@/lib/api";
 
 interface LoginPortalProps {
   userType: 'admin' | 'agent' | 'pilgrim';
@@ -16,6 +17,7 @@ const LoginPortal = ({ userType }: LoginPortalProps) => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const userTypeConfig = {
     admin: {
@@ -44,15 +46,38 @@ const LoginPortal = ({ userType }: LoginPortalProps) => {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    
-    // Simulate login process
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    // For demo - redirect to respective dashboard
-    const link = document.createElement('a');
-    link.href = `/${userType}-dashboard`;
-    link.click();
-    
+    setError("");
+    try {
+  const res = await fetch(`${API_BASE_URL}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, role: userType })
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error || "Login failed. Please try again.");
+        setIsLoading(false);
+        return;
+      }
+      const data = await res.json();
+      if (data.success) {
+        if (userType === "admin") {
+          localStorage.setItem("admin_token", "real_admin_token");
+        } else if (userType === "agent") {
+          // store real token and agent id returned by server
+          try { if (data.token) localStorage.setItem('agent_token', data.token); else localStorage.setItem('agent_token','real_agent_token'); } catch (e) { localStorage.setItem('agent_token','real_agent_token'); }
+          try { if (data.user && data.user.id) localStorage.setItem('agent_id', String(data.user.id)); } catch (e) {}
+        } else if (userType === "pilgrim") {
+          localStorage.setItem("pilgrim_token", "real_pilgrim_token");
+          localStorage.setItem("pilgrim_id", data.user.id.toString());
+        }
+        window.location.href = `/${userType}-dashboard`;
+      } else {
+        setError(data.error || "Login failed. Please try again.");
+      }
+    } catch (err) {
+      setError("Network error. Please try again.");
+    }
     setIsLoading(false);
   };
 
@@ -90,6 +115,9 @@ const LoginPortal = ({ userType }: LoginPortalProps) => {
           
           <CardContent>
             <form onSubmit={handleLogin} className="space-y-6">
+              {error && (
+                <div className="text-red-500 text-center text-sm font-semibold">{error}</div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="email">Email Address</Label>
                 <Input
@@ -123,7 +151,7 @@ const LoginPortal = ({ userType }: LoginPortalProps) => {
               >
                 {isLoading ? "Signing In..." : "Sign In"}
               </Button>
-              
+
               <div className="text-center">
                 <Dialog>
                   <DialogTrigger asChild>
@@ -140,11 +168,19 @@ const LoginPortal = ({ userType }: LoginPortalProps) => {
           </CardContent>
         </Card>
 
-        <div className="text-center mt-6">
-          <p className="text-sm text-primary-foreground/80">
-            Need access? Contact your system administrator
-          </p>
-        </div>
+        {/* Sign Up Section for admin/agent */}
+        {(userType === "admin" || userType === "agent") && (
+          <div className="text-center mt-6">
+            <p className="text-sm text-primary-foreground/80 mb-2">
+              Don&apos;t have an account?&nbsp;
+              <Button variant="link" className="text-sm p-0" onClick={() => {
+                window.location.href = `/signup?role=${userType}`;
+              }}>
+                Sign Up
+              </Button>
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

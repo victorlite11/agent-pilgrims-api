@@ -13,6 +13,8 @@ import AgentDashboardPage from "./pages/AgentDashboardPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
 import PilgrimDashboardPage from "./pages/PilgrimDashboardPage";
 import SignUpPage from "./pages/SignUpPage";
+import SignupConfirmation from "./pages/SignupConfirmation";
+import AdminEntryPage from "./pages/AdminEntryPage";
 
 const queryClient = new QueryClient();
 
@@ -31,8 +33,10 @@ const App = () => (
           <Route path="/admin-dashboard" element={<AdminDashboardPage />} />
           <Route path="/pilgrim-dashboard" element={<PilgrimDashboardPage />} />
           <Route path="/signup" element={<SignUpPage />} />
+          <Route path="/signup-confirmation" element={<SignupConfirmation />} />
           {/* Direct routes for admin and agents */}
-          <Route path="/admin" element={<AdminDashboardPage />} />
+          // ...existing code...
+            <Route path="/admin" element={<AdminEntryPage />} />
           <Route path="/agents" element={<AgentDashboardPage />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />

@@ -1,0 +1,13 @@
+﻿{
+    "value":  [
+                  {
+                      "id":  1,
+                      "userId":  1,
+                      "userType":  "agent",
+                      "action":  "Test action",
+                      "details":  "test",
+                      "date":  "2025-10-08T13:57:18.869Z"
+                  }
+              ],
+    "Count":  1
+}

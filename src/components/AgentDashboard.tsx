@@ -7,15 +7,28 @@ import { Users, UserPlus, Search, LogOut, Bell, FileText, TrendingUp, Calendar, 
 import { Badge as StatusBadge } from "@/components/ui/badge";
 import pilgrimIcon from "@/assets/pilgrim-icon.jpg";
 import { useToast } from "@/hooks/use-toast";
+import { API_BASE_URL } from "@/lib/api";
 import { useNavigate } from "react-router-dom";
 import AgentCalendar from "./AgentCalendar";
 import AgentTaskManager from "./AgentTaskManager";
 import AgentPerformanceAnalytics from "./AgentPerformanceAnalytics";
+import RegisterPilgrimModal from "./RegisterPilgrimModal";
+import EditPilgrimModal from "./EditPilgrimModal";
 
 
 const AgentDashboard = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
+  const token = localStorage.getItem('agent_token');
+  const fetchOptions = token ? { headers: { 'Authorization': `Bearer ${token}` } } : {};
+
+  // Auth check
+  useEffect(() => {
+    const token = localStorage.getItem("agent_token");
+    if (!token) {
+      navigate("/agent-login");
+    }
+  }, [navigate]);
   // State and hooks
   const [searchNIN, setSearchNIN] = useState("");
   const [isSearching, setIsSearching] = useState(false);
@@ -35,6 +48,39 @@ const AgentDashboard = () => {
   const [docStatusFilter, setDocStatusFilter] = useState("");
   // Add missing state for searchResults
   const [searchResults, setSearchResults] = useState<string | null>(null);
+  const [openChat, setOpenChat] = useState("");
+  const [chatMessagesInt, setChatMessagesInt] = useState<any[]>([]);
+  const [chatTargetPilgrimId, setChatTargetPilgrimId] = useState<number | null>(null);
+  // EventSource refs for SSE
+  const agentEventSourceRef = useRef<EventSource | null>(null);
+  const pilgrimEventSourceRef = useRef<EventSource | null>(null);
+  const documentsEventSourceRef = useRef<EventSource | null>(null);
+  // Deduplicate incoming messages
+  const receivedMessageIdsRef = useRef<Set<number>>(new Set());
+
+  // Use SSE for integrated chat (agent-level stream) and one-time fetch for history
+  useEffect(() => {
+    if (!openChat) return;
+    const fetchHistory = async () => {
+      try {
+        let url = `${API_BASE_URL}/messages`;
+        if (openChat === 'pilgrim') {
+          const pid = chatTargetPilgrimId ?? (pilgrims[0]?.id ?? null);
+          if (!pid) return;
+          url += `?pilgrimId=${pid}`;
+        }
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const data = await res.json();
+        const mapped = data.map((m: any) => ({ id: m.id, from: m.sender || m.from, message: m.message, date: m.timestamp ? new Date(m.timestamp).toLocaleString() : (m.date || ''), fileUrl: m.fileUrl, fileType: m.fileType, pilgrimId: m.pilgrimId, agentId: m.agentId }));
+        mapped.forEach((m: any) => receivedMessageIdsRef.current.add(Number(m.id)));
+        setChatMessagesInt(mapped);
+      } catch (e) { /* ignore */ }
+    };
+    fetchHistory();
+    // The real-time updates will arrive via the agent-level EventSource (see effect below)
+    return () => { setChatMessagesInt([]); };
+  }, [openChat, chatTargetPilgrimId, pilgrims]);
 
   // Notification state
   const [notifications, setNotifications] = useState([
@@ -53,19 +99,50 @@ const AgentDashboard = () => {
   const [selectedDocs, setSelectedDocs] = useState<number[]>([]);
 
   // Activity Log state
-  const [activityLog, setActivityLog] = useState([
-    { id: 1, action: "Uploaded document", date: "2025-08-22" },
-    { id: 2, action: "Approved registration", date: "2025-08-21" },
-    { id: 3, action: "Sent message", date: "2025-08-20" }
-  ]);
+  const [activityLog, setActivityLog] = useState<any[]>([]);
+
+  // helper to post activity entries to backend
+  const logActivity = async (userId: number | null, userType: string, action: string, details?: string) => {
+    try {
+      await fetch(`${API_BASE_URL}/activity-log`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: userId || 0, userType, action, details: details || '' })
+      });
+    } catch (e) { /* ignore logging failures */ }
+  };
+
+  const fetchActivityLog = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/activity-log`);
+      if (!res.ok) { setActivityLog([]); return; }
+      const data = await res.json();
+      setActivityLog(data || []);
+    } catch (e) { setActivityLog([]); }
+  };
+
+  // Register/Edit Pilgrim modal state
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editPilgrim, setEditPilgrim] = useState<any>(null);
+  const [registerInitialData, setRegisterInitialData] = useState<any>(null);
 
   // Fetch agent and pilgrims on mount
   useEffect(() => {
-    // For demo, use agentId 1
-    const agentId = 1;
+    // Use logged-in agent id from localStorage
+    const agentId = Number(localStorage.getItem('agent_id') || '0') || null;
+    const token = localStorage.getItem('agent_token');
+    const authHeaders = token ? { headers: { 'Authorization': `Bearer ${token}` } } : {};
+    if (!agentId) {
+      // if no agent id stored, redirect to login
+      navigate('/agent-login');
+      return;
+    }
     setDocLoading(true);
-  fetch(`https://agent-pilgrims-api.onrender.com/agents/${agentId}`)
-      .then(res => res.json())
+  fetch(`${API_BASE_URL}/agents/${agentId}`, authHeaders)
+      .then(res => {
+        if (!res.ok) throw new Error('Failed to fetch agent');
+        return res.json();
+      })
       .then(data => setAgentData({
         ...data,
         totalPilgrims: data.pilgrims || 0,
@@ -88,28 +165,207 @@ const AgentDashboard = () => {
           location: "Lagos, Nigeria"
         });
       });
-  fetch(`https://agent-pilgrims-api.onrender.com/pilgrims?agentId=${agentId}`)
+  // Fetch only pilgrims assigned to this agent (include token as query param for SSE and for servers that don't accept Authorization header)
+  const pilgrimsUrl = `${API_BASE_URL}/pilgrims?agentId=${agentId}`;
+  const fetchOptions = token ? { headers: { 'Authorization': `Bearer ${token}` } } : {};
+  fetch(pilgrimsUrl, fetchOptions)
       .then(res => res.json())
-      .then(data => setPilgrims(data))
+      .then(data => {
+        try {
+          const normalized = data.map((p: any) => ({ ...p, registrationDate: p.registrationDate || p.date || null }));
+          normalized.sort((a: any, b: any) => {
+            const da = a.registrationDate ? new Date(a.registrationDate).getTime() : 0;
+            const db = b.registrationDate ? new Date(b.registrationDate).getTime() : 0;
+            if (db !== da) return db - da;
+            return (b.id || 0) - (a.id || 0);
+          });
+          setPilgrims(normalized);
+          setAgentData(prev => ({ ...prev, totalPilgrims: normalized.length }));
+        } catch (e) {
+          setPilgrims(data || []);
+        }
+      })
       .catch(() => {
-        // Enhanced fallback demo pilgrims
-        setPilgrims([
-          { id: 1, name: "John Doe", status: "Completed", registrationDate: "2025-09-01", destination: "Jerusalem", documents: ["Passport", "Visa"], contact: "+234 801 111 2222" },
-          { id: 2, name: "Jane Smith", status: "Pending Documents", registrationDate: "2025-09-10", destination: "Rome", documents: ["Passport"], contact: "+234 801 333 4444" },
-          { id: 3, name: "Samuel Johnson", status: "In Review", registrationDate: "2025-09-15", destination: "Bethlehem", documents: [], contact: "+234 801 555 6666" },
-          { id: 4, name: "Maryam Musa", status: "Completed", registrationDate: "2025-08-28", destination: "Nazareth", documents: ["Passport", "Visa", "Medical"], contact: "+234 801 777 8888" },
-          { id: 5, name: "Chinedu Eze", status: "Pending Payment", registrationDate: "2025-09-18", destination: "Jerusalem", documents: ["Passport"], contact: "+234 801 999 0000" }
-        ]);
+        setPilgrims([]);
       });
     setDocLoading(false);
   }, []);
+
+  // fetch activity log
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/activity-log`);
+        if (!res.ok) { setActivityLog([]); return; }
+        const data = await res.json();
+        setActivityLog(data || []);
+      } catch (e) {
+        setActivityLog([]);
+      }
+    })();
+  }, []);
+
+  // Use SSE for messages for the selected pilgrim; do an initial fetch for history
+  useEffect(() => {
+    // Cleanup any previous pilgrim EventSource
+    if (pilgrimEventSourceRef.current) {
+      try { pilgrimEventSourceRef.current.close(); } catch (e) {}
+      pilgrimEventSourceRef.current = null;
+    }
+    if (!selectedPilgrim) {
+      setMessages([]);
+      return;
+    }
+    const fetchHistory = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/messages?pilgrimId=${selectedPilgrim.id}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const mapped = data.map((m: any) => ({
+          id: m.id,
+          pilgrimId: m.pilgrimId,
+          from: m.sender || m.from,
+          message: m.message,
+          date: m.timestamp ? new Date(m.timestamp).toLocaleString() : (m.date || ''),
+          fileUrl: m.fileUrl,
+          fileType: m.fileType,
+          read: m.read || false
+        }));
+        mapped.forEach((m: any) => receivedMessageIdsRef.current.add(Number(m.id)));
+        setMessages(mapped);
+      } catch (e) { /* ignore */ }
+    };
+    fetchHistory();
+
+    // Open SSE for this pilgrim so incoming messages are real-time
+    try {
+  const token = localStorage.getItem('agent_token');
+  const tokenParam = token ? `&token=${encodeURIComponent(token)}` : '';
+  const es = new EventSource(`${API_BASE_URL}/messages/stream?pilgrimId=${selectedPilgrim.id}${tokenParam}`);
+      es.onmessage = (ev) => {
+        try {
+          const m = JSON.parse(ev.data);
+          if (!m || !m.id) return;
+          if (receivedMessageIdsRef.current.has(Number(m.id))) return;
+          receivedMessageIdsRef.current.add(Number(m.id));
+          const uiMsg = {
+            id: m.id,
+            pilgrimId: m.pilgrimId,
+            from: m.sender || m.from,
+            message: m.message,
+            date: m.timestamp ? new Date(m.timestamp).toLocaleString() : '',
+            fileUrl: m.fileUrl,
+            fileType: m.fileType,
+            read: false
+          };
+          setMessages(prev => [...prev, uiMsg]);
+        } catch (e) { /* ignore parse errors */ }
+      };
+      es.onerror = (err) => {
+        // close on error; EventSource will try to reconnect by default
+        try { es.close(); } catch (e) {}
+      };
+      pilgrimEventSourceRef.current = es;
+    } catch (e) {
+      // ignore SSE creation errors
+    }
+
+    return () => {
+      if (pilgrimEventSourceRef.current) try { pilgrimEventSourceRef.current.close(); } catch (e) {}
+      pilgrimEventSourceRef.current = null;
+    };
+  }, [selectedPilgrim]);
+
+  // Agent-level SSE: subscribe to agent stream once agentData is available to receive incoming messages directed to this agent
+  useEffect(() => {
+    if (!agentData?.id) return;
+    // Cleanup previous
+    if (agentEventSourceRef.current) try { agentEventSourceRef.current.close(); } catch (e) {}
+    try {
+      const agentId = agentData.id;
+  const token = localStorage.getItem('agent_token');
+  const tokenParam = token ? `&token=${encodeURIComponent(token)}` : '';
+  const es = new EventSource(`${API_BASE_URL}/messages/stream?agentId=${agentId}${tokenParam}`);
+      es.onmessage = (ev) => {
+        try {
+          const m = JSON.parse(ev.data);
+          if (!m || !m.id) return;
+          if (receivedMessageIdsRef.current.has(Number(m.id))) return;
+          receivedMessageIdsRef.current.add(Number(m.id));
+          const uiMsg = {
+            id: m.id,
+            pilgrimId: m.pilgrimId,
+            agentId: m.agentId,
+            from: m.sender || m.from,
+            message: m.message,
+            date: m.timestamp ? new Date(m.timestamp).toLocaleString() : '',
+            fileUrl: m.fileUrl,
+            fileType: m.fileType,
+            read: false
+          };
+          // If currently viewing this pilgrim, append to that view; otherwise append to integrated chat when appropriate
+          if (selectedPilgrim && m.pilgrimId && Number(m.pilgrimId) === Number(selectedPilgrim.id)) {
+            setMessages(prev => [...prev, uiMsg]);
+          } else if (openChat) {
+            // For integrated chat UI, only append messages that match the openChat target
+            if (openChat === 'pilgrim') {
+              const targetPid = chatTargetPilgrimId ?? pilgrims[0]?.id ?? null;
+              if (targetPid && Number(m.pilgrimId) === Number(targetPid)) setChatMessagesInt(prev => [...prev, uiMsg]);
+            } else {
+              setChatMessagesInt(prev => [...prev, uiMsg]);
+            }
+          }
+        } catch (e) { /* ignore */ }
+      };
+      es.onerror = (err) => {
+        try { es.close(); } catch (e) {}
+      };
+      agentEventSourceRef.current = es;
+    } catch (e) {
+      // ignore
+    }
+    return () => { if (agentEventSourceRef.current) try { agentEventSourceRef.current.close(); } catch (e) {} };
+  }, [agentData?.id, openChat, chatTargetPilgrimId, selectedPilgrim, pilgrims]);
+
+  // Documents SSE for agent: receive real-time document uploads related to this agent
+  useEffect(() => {
+    if (!agentData?.id) return;
+    // cleanup previous
+    if (documentsEventSourceRef.current) try { documentsEventSourceRef.current.close(); } catch (e) {}
+    try {
+      const tokenParam = token ? `&token=${encodeURIComponent(token)}` : '';
+      const url = `${API_BASE_URL}/documents/stream?agentId=${agentData.id}${tokenParam}`;
+      const es = new EventSource(url);
+      es.onmessage = async (ev) => {
+        try {
+          const payload = JSON.parse(ev.data);
+          if (!payload || payload.type !== 'document' || !payload.document) return;
+          // safer: re-fetch documents for this agent (backend will filter by agent token)
+          const res = await fetch(`${API_BASE_URL}/documents`, fetchOptions);
+          if (res.ok) {
+            const docs = await res.json();
+            // only show documents for this agent's pilgrims
+            const pilgrimIds = pilgrims.map(p => p.id);
+            setDocuments((docs || []).filter((d: any) => pilgrimIds.includes(d.pilgrimId)));
+          }
+          toast({ title: 'New Document', description: `${payload.document.name} uploaded by Pilgrim #${payload.document.pilgrimId}` });
+          fetchActivityLog();
+        } catch (e) { /* ignore parse errors */ }
+      };
+      es.onerror = (err) => { try { es.close(); } catch (e) {} };
+      documentsEventSourceRef.current = es;
+    } catch (e) {
+      // ignore SSE errors
+    }
+    return () => { if (documentsEventSourceRef.current) try { documentsEventSourceRef.current.close(); } catch (e) {} documentsEventSourceRef.current = null; };
+  }, [agentData?.id]);
 
   // Fetch documents for agent's pilgrims
   useEffect(() => {
     if (!agentData || !pilgrims.length) return;
     setDocLoading(true);
-  fetch('https://agent-pilgrims-api.onrender.com/documents')
-      .then(res => res.json())
+  fetch(`${API_BASE_URL}/documents`, fetchOptions)
+    .then(res => res.json())
       .then(data => {
         const pilgrimIds = pilgrims.map((p: any) => p.id);
         setDocuments(data.filter((doc: any) => pilgrimIds.includes(doc.pilgrimId)));
@@ -134,14 +390,17 @@ const AgentDashboard = () => {
   const handleDocumentStatus = async (docId: number, status: string) => {
     setDocLoading(true);
     try {
-  const res = await fetch(`https://agent-pilgrims-api.onrender.com/documents/${docId}` , {
+        const res = await fetch(`${API_BASE_URL}/documents/${docId}` , {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
         body: JSON.stringify({ status })
       });
       if (res.ok) {
         setDocuments(prev => prev.map(doc => doc.id === docId ? { ...doc, status } : doc));
         toast({ title: `Document ${status}`, description: `Document has been marked as ${status}.` });
+  // log activity
+  await logActivity(agentData?.id || null, 'agent', `Document ${status}`, `Document ${docId} marked ${status}`);
+  fetchActivityLog();
       } else {
         toast({ title: 'Error', description: 'Failed to update document status.' });
       }
@@ -169,33 +428,11 @@ const AgentDashboard = () => {
 
   // Take over registration handler (mock)
   const handleTakeOverRegistration = async () => {
-    if (!selectedPilgrim || !agentData) return;
-    const request = {
-      agentId: agentData.id,
-      agentName: agentData.name,
-      pilgrimId: selectedPilgrim.id,
-      pilgrimName: selectedPilgrim.name,
-      date: new Date().toISOString(),
-      status: "pending"
-    };
-  const res = await fetch("https://agent-pilgrims-api.onrender.com/takeoverRequests", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(request)
-    });
-    if (res.ok) {
-      toast({
-        title: "Takeover Request Sent",
-        description: "Takeover request sent to previous agent. You will be notified when approved.",
-      });
-    } else {
-      toast({ title: "Error", description: "Failed to send takeover request.", variant: "destructive" });
-    }
-    setSearchResults(null);
-    setSearchNIN("");
+    // open the register modal prefilled with the selected pilgrim or search input
+    const initial = selectedPilgrim ? { name: selectedPilgrim.name, passportNumber: selectedPilgrim.passportNumber || '' } : { name: searchNIN || 'vic', passportNumber: searchNIN || '' };
+    setRegisterInitialData(initial);
+    setShowRegisterModal(true);
   };
-
-  // Appeal ban handler (mock)
   const handleAppealBan = async () => {
     toast({
       title: "Appeal Submitted",
@@ -205,12 +442,13 @@ const AgentDashboard = () => {
     setSearchNIN("");
   };
 
-  // Filtered documents for search/filter UI
+  // Filtered documents for search/filter UI (defensive: guard against missing fields)
+  const normalizedDocSearch = (docSearch || '').toString().toLowerCase();
   const filteredDocuments = documents.filter((doc) => {
     const pilgrim = pilgrims.find((p) => p.id === doc.pilgrimId);
-    const matchesSearch =
-      doc.name.toLowerCase().includes(docSearch.toLowerCase()) ||
-      (pilgrim && pilgrim.name.toLowerCase().includes(docSearch.toLowerCase()));
+    const docName = (doc?.name || doc?.fileName || '').toString().toLowerCase();
+    const pilgrimName = (pilgrim?.name || '').toString().toLowerCase();
+    const matchesSearch = docName.includes(normalizedDocSearch) || pilgrimName.includes(normalizedDocSearch);
     const matchesStatus = docStatusFilter ? doc.status === docStatusFilter : true;
     return matchesSearch && matchesStatus;
   });
@@ -259,7 +497,7 @@ const AgentDashboard = () => {
                   <Button variant="ghost" size="sm">
                     <Bell className="h-5 w-5" />
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => navigate('/agent-login')}>
+                  <Button variant="outline" size="sm" onClick={() => { localStorage.removeItem('agent_token'); navigate('/agent-login'); }}>
                     <LogOut className="mr-2 h-4 w-4" />
                     Sign Out
                   </Button>
@@ -379,8 +617,13 @@ const AgentDashboard = () => {
                                   variant="ghost"
                                   title="Download Document"
                                   onClick={() => {
+                                    const normalize = (u: string) => {
+                                      if (!u) return u;
+                                      if (u.startsWith('http://') || u.startsWith('https://') || u.startsWith('blob:')) return u;
+                                      return `${API_BASE_URL.replace(/\/$/, '')}${u.startsWith('/') ? u : `/${u}`}`;
+                                    };
                                     const link = document.createElement('a');
-                                    link.href = doc.fileUrl;
+                                    link.href = normalize(doc.fileUrl);
                                     link.download = doc.name;
                                     document.body.appendChild(link);
                                     link.click();
@@ -511,6 +754,105 @@ const AgentDashboard = () => {
                   </CardContent>
                 </Card>
 
+                  {/* Integrated Chat/Support for agents when no pilgrim selected */}
+                  {!selectedPilgrim && (
+                    <Card className="shadow-card mt-4">
+                      <CardHeader>
+                        <CardTitle className="flex items-center">
+                          <MessageCircle className="mr-2 h-5 w-5 text-primary" />
+                          Integrated Chat/Support
+                        </CardTitle>
+                        <CardDescription>Direct chat with pilgrims or internal team</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="flex gap-2 mb-3">
+                          <Button variant="outline" size="sm" onClick={() => { setOpenChat('agent'); setChatMessagesInt([]); }}>Chat with Agent</Button>
+                          <Button variant="outline" size="sm" onClick={() => { setOpenChat('pilgrim'); setChatMessagesInt([]); setChatTargetPilgrimId(pilgrims[0]?.id ?? null); }}>Chat with Pilgrim</Button>
+                          <Button variant="outline" size="sm" onClick={() => { setOpenChat('admin'); setChatMessagesInt([]); }}>Internal Admin Chat</Button>
+                        </div>
+                        {openChat && (
+                          <div>
+                            {openChat === 'pilgrim' && (
+                              <div className="mb-2">
+                                <label className="text-sm mr-2">Select Pilgrim:</label>
+                                <select value={chatTargetPilgrimId ?? ''} onChange={e => setChatTargetPilgrimId(Number(e.target.value))} className="border rounded px-2 py-1">
+                                  {pilgrims.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                </select>
+                              </div>
+                            )}
+                            <div ref={chatBoxRef} className="max-h-40 overflow-y-auto mb-2 space-y-1 bg-white rounded p-2">
+                              {chatMessagesInt.length === 0 ? (
+                                <div className="text-muted-foreground text-sm">No messages yet. Start the conversation!</div>
+                              ) : (
+                                chatMessagesInt.map((message, idx) => {
+                                  const isMe = message.from === agentData?.name;
+                                  return (
+                                    <div key={message.id || idx} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                                      <div className={`max-w-[70%] rounded-lg p-2 ${isMe ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'}`}>
+                                        <div className="flex items-center justify-between mb-1">
+                                          <span className="font-semibold text-xs">{isMe ? 'You' : message.from}</span>
+                                          <span className="text-[10px] text-muted-foreground">{message.date}</span>
+                                        </div>
+                                        <div>{message.message}</div>
+                                      </div>
+                                    </div>
+                                  );
+                                })
+                              )}
+                            </div>
+                            <form className="flex items-center border-t bg-background px-2 py-2 gap-2" onSubmit={async (e) => {
+                              e.preventDefault();
+                              if (!chatInput.trim() && !attachment) return;
+                              setUploading(true);
+                              let fileUrl = null;
+                              let fileType = null;
+                              if (attachment) {
+                                try {
+                                  const formData = new FormData();
+                                  formData.append('file', attachment);
+                            const res = await fetch(`${API_BASE_URL}/upload`, { method: 'POST', body: formData });
+                                  const data = await res.json();
+                                  fileUrl = data.fileUrl;
+                                } catch (err) {
+                                  toast({ title: 'Upload failed', description: 'Could not upload file.', variant: 'destructive' });
+                                  setUploading(false);
+                                  return;
+                                }
+                                fileType = attachment.type.startsWith('image') ? 'image' : (attachment.type === 'application/pdf' ? 'pdf' : null);
+                              }
+                              const targetPilgrimId = chatTargetPilgrimId ?? selectedPilgrim?.id ?? (pilgrims[0]?.id ?? 1);
+                              const payload = {
+                                pilgrimId: targetPilgrimId,
+                                sender: agentData?.name || 'Agent',
+                                message: chatInput,
+                                fileUrl: fileUrl || null,
+                                fileType: fileType || null
+                              };
+                          const resp = await fetch(`${API_BASE_URL}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                              if (resp.ok) {
+                                setChatInput(''); setAttachment(null); setUploading(false);
+                                setChatMessagesInt(prev => [...prev, { ...{
+                                  id: Date.now(), from: payload.sender, message: payload.message, date: new Date().toLocaleString(), fileUrl: payload.fileUrl, fileType: payload.fileType
+                                }}]);
+                              } else {
+                                setUploading(false); toast({ title: 'Error', description: 'Failed to send message.', variant: 'destructive' });
+                              }
+                            }}>
+                              <input className="flex-1 rounded border px-3 py-2 text-sm focus:outline-none focus:ring" placeholder="Type your message..." value={chatInput} onChange={e => setChatInput(e.target.value)} disabled={uploading} />
+                              <label className="cursor-pointer flex items-center">
+                                <input type="file" accept="image/*,application/pdf" className="hidden" onChange={e => { if (e.target.files && e.target.files[0]) setAttachment(e.target.files[0]); }} disabled={uploading} />
+                                <Paperclip className="h-5 w-5 text-muted-foreground" />
+                              </label>
+                              {attachment && <span className="text-xs text-muted-foreground ml-1">{attachment.name}</span>}
+                              <Button type="submit" size="sm" disabled={uploading}>{uploading ? <Loader2 className="animate-spin h-4 w-4" /> : 'Send'}</Button>
+                              <Button type="button" size="sm" variant="ghost" onClick={() => { setOpenChat(''); setChatMessagesInt([]); }}>Close</Button>
+                            </form>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
+
                 {/* Chat with selected pilgrim */}
                 {selectedPilgrim && (
                   <Card className="shadow-card flex flex-col h-[400px] mt-8">
@@ -559,28 +901,52 @@ const AgentDashboard = () => {
                           let fileUrl = null;
                           let fileType = null;
                           if (attachment) {
-                            fileUrl = URL.createObjectURL(attachment);
+                            // Upload file to backend
+                            try {
+                              const formData = new FormData();
+                              formData.append('file', attachment);
+                              const res = await fetch(`${API_BASE_URL}/upload`, {
+                                method: 'POST',
+                                body: formData
+                              });
+                              const data = await res.json();
+                              fileUrl = data.fileUrl;
+                            } catch (e) {
+                              toast({ title: 'Upload failed', description: 'Could not upload file.', variant: 'destructive' });
+                              setUploading(false);
+                              return;
+                            }
                             fileType = attachment.type.startsWith('image') ? 'image' : (attachment.type === 'application/pdf' ? 'pdf' : null);
                           }
-                          const newMessage = {
-                            from: agentData.name,
-                            message: chatInput,
-                            date: new Date().toLocaleString(),
+                          const payload = {
                             pilgrimId: selectedPilgrim.id,
-                            read: false,
-                            fileUrl,
-                            fileType
+                            sender: agentData.name,
+                            message: chatInput,
+                            fileUrl: fileUrl || null,
+                            fileType: fileType || null
                           };
-                          const res = await fetch('https://agent-pilgrims-api.onrender.com/messages', {
+                          const res = await fetch(`${API_BASE_URL}/messages`, {
+
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(newMessage)
+                            body: JSON.stringify(payload)
                           });
                           if (res.ok) {
                             setChatInput("");
                             setAttachment(null);
                             setUploading(false);
-                            setMessages(prev => [...prev, { ...newMessage, id: Date.now() }]);
+                            // Append a UI-friendly message object
+                            const uiMessage = {
+                              id: Date.now(),
+                              pilgrimId: selectedPilgrim.id,
+                              from: agentData.name,
+                              message: payload.message,
+                              date: new Date().toLocaleString(),
+                              fileUrl: payload.fileUrl,
+                              fileType: payload.fileType,
+                              read: false
+                            };
+                            setMessages(prev => [...prev, uiMessage]);
                           } else {
                             setUploading(false);
                             toast({ title: 'Error', description: 'Failed to send message.', variant: 'destructive' });
@@ -697,7 +1063,7 @@ const AgentDashboard = () => {
                 <Button size="sm" variant="destructive" onClick={() => selectedDocs.forEach(id => handleDocumentStatus(id, 'Rejected'))} disabled={selectedDocs.length === 0}>Reject Selected</Button>
               </div>
               <ul className="space-y-2">
-                {documents.filter(doc => doc.fileName.toLowerCase().includes(docSearch.toLowerCase())).map(doc => (
+                {filteredDocuments.map(doc => (
                   <li key={doc.id} className="p-2 rounded bg-secondary/30 flex items-center gap-2">
                     <input type="checkbox" checked={selectedDocs.includes(doc.id)} onChange={e => {
                       if (e.target.checked) setSelectedDocs([...selectedDocs, doc.id]);
@@ -706,10 +1072,18 @@ const AgentDashboard = () => {
                     <FileText className="h-4 w-4 text-primary" />
                     <span className="font-medium">{doc.fileName}</span>
                     <Badge variant="outline">{doc.status}</Badge>
-                    <Button size="sm" variant="outline" onClick={() => window.open(`/documents/${doc.fileName}`, "_blank")}>Preview</Button>
+                    <Button size="sm" variant="outline" onClick={() => {
+                      const normalize = (u: string | undefined | null) => {
+                        if (!u) return null;
+                        if (u.startsWith('http://') || u.startsWith('https://') || u.startsWith('blob:')) return u;
+                        return `${API_BASE_URL.replace(/\/$/, '')}${u.startsWith('/') ? u : `/${u}`}`;
+                      };
+                      const target = normalize(doc.fileUrl) || (doc.fileName ? normalize(`/uploads/${doc.fileName}`) : null) || (doc.id ? `${API_BASE_URL}/documents/${doc.id}` : null);
+                      if (target) window.open(target, '_blank');
+                    }}>Preview</Button>
                   </li>
                 ))}
-                {documents.filter(doc => doc.fileName.toLowerCase().includes(docSearch.toLowerCase())).length === 0 && <li className="text-muted-foreground">No documents found.</li>}
+                {filteredDocuments.length === 0 && <li className="text-muted-foreground">No documents found.</li>}
               </ul>
             </CardContent>
           </Card>
@@ -738,6 +1112,36 @@ const AgentDashboard = () => {
           <Button size="sm" variant="outline" className="mt-4" onClick={handleExport}>
             <Download className="mr-2 h-4 w-4" /> Export Data
           </Button>
+
+          {/* Register Pilgrim Modal */}
+          {showRegisterModal && (
+            <RegisterPilgrimModal
+              agentId={agentData?.id}
+              agentName={agentData?.name}
+              onRegistered={() => {
+                // Refresh pilgrims list after registration
+                fetch(`${API_BASE_URL}/pilgrims?agentId=${agentData?.id}`)
+                  .then(res => res.json())
+                  .then(data => setPilgrims(data));
+              }}
+              initialData={registerInitialData}
+              onClose={() => { setShowRegisterModal(false); setRegisterInitialData(null); }}
+            />
+          )}
+
+          {/* Edit Pilgrim Modal */}
+          {showEditModal && editPilgrim && (
+            <EditPilgrimModal
+              pilgrim={editPilgrim}
+              onUpdated={() => {
+                // Refresh pilgrims list after update
+                fetch(`${API_BASE_URL}/pilgrims?agentId=${agentData?.id}`)
+                  .then(res => res.json())
+                  .then(data => setPilgrims(data));
+              }}
+              onClose={() => { setShowEditModal(false); setEditPilgrim(null); }}
+            />
+          )}
         </div>
       )}
     </>

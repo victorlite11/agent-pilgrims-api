@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { API_BASE_URL } from "@/lib/api";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 
 interface ViewPilgrimsModalProps {
   open: boolean;
@@ -10,14 +12,24 @@ interface ViewPilgrimsModalProps {
 const ViewPilgrimsModal = ({ open, onClose }: ViewPilgrimsModalProps) => {
   const [pilgrims, setPilgrims] = useState([]);
   const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (open) {
       setLoading(true);
-  fetch("https://agent-pilgrims-api.onrender.com/pilgrims")
-        .then((res) => res.json())
-        .then((data) => setPilgrims(data))
-        .finally(() => setLoading(false));
+      (async () => {
+        try {
+          const res = await fetch(`${API_BASE_URL}/pilgrims`);
+          if (!res.ok) throw new Error('Failed to fetch pilgrims');
+          const data = await res.json();
+          setPilgrims(data || []);
+        } catch (e: any) {
+          setPilgrims([]);
+          toast({ title: 'Error', description: 'Unable to load pilgrims at this time.', variant: 'destructive' });
+        } finally {
+          setLoading(false);
+        }
+      })();
     }
   }, [open]);
 

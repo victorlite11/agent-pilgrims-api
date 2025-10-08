@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { Upload, FileText, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { API_BASE_URL } from "@/lib/api";
 
 interface DocumentUploadModalProps {
   onDocumentUpload: (document: any) => void;
@@ -87,8 +88,34 @@ const DocumentUploadModal = ({ onDocumentUpload, defaultName }: DocumentUploadMo
 
     setIsLoading(true);
 
-    // Simulate file upload
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Upload file to backend
+    let fileUrl = null;
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile as File);
+      const res = await fetch(`${API_BASE_URL}/upload`, {
+        method: 'POST',
+        body: formData
+      });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        console.error('[UPLOAD ERROR]', res.status, txt);
+        toast({ title: 'Upload failed', description: 'Server rejected the file upload.', variant: 'destructive' });
+        setIsLoading(false);
+        return;
+      }
+      const data = await res.json();
+      fileUrl = data.fileUrl;
+      // normalize to absolute URL if backend returned a relative path
+      if (fileUrl && fileUrl.startsWith('/')) {
+        fileUrl = `${API_BASE_URL.replace(/\/$/, '')}${fileUrl}`;
+      }
+    } catch (e) {
+      console.error('[UPLOAD EXCEPTION]', e);
+      toast({ title: 'Upload failed', description: 'Could not upload file.', variant: 'destructive' });
+      setIsLoading(false);
+      return;
+    }
 
     const newDocument = {
       id: Date.now(),
@@ -96,19 +123,20 @@ const DocumentUploadModal = ({ onDocumentUpload, defaultName }: DocumentUploadMo
       status: "Under Review",
       date: new Date().toISOString().split('T')[0],
       fileName: selectedFile.name,
-      fileSize: (selectedFile.size / 1024).toFixed(1) + " KB"
+      fileSize: (selectedFile.size / 1024).toFixed(1) + " KB",
+      fileUrl
     };
 
     onDocumentUpload(newDocument);
-    
+
     toast({
       title: "Document uploaded successfully!",
       description: `${documentType} has been submitted for review.`,
     });
 
     // Reset form
-  setSelectedFile(null);
-  setDocumentType(defaultName || "");
+    setSelectedFile(null);
+    setDocumentType(defaultName || "");
     setIsLoading(false);
     setOpen(false);
   };
