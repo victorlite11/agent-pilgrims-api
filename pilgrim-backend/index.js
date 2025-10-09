@@ -100,6 +100,23 @@ async function main() {
     const clientBuildPath = path.join(__dirname, '..', 'dist');
     if (fs.existsSync(clientBuildPath)) {
       console.log('[STATIC] Serving client build from', clientBuildPath);
+      // Lightweight asset request logger to capture intermittent 502s at the edge
+      app.use((req, res, next) => {
+        try {
+          if (req.path && req.path.startsWith('/assets/')) {
+            const start = Date.now();
+            const ua = req.get('user-agent') || '';
+            const ip = req.ip || req.connection && req.connection.remoteAddress || 'unknown';
+            res.on('finish', () => {
+              try {
+                const ms = Date.now() - start;
+                console.log('[ASSET]', { method: req.method, path: req.path, status: res.statusCode, ip, ua: ua.substring(0,200), ms });
+              } catch (e) { /* swallow logging errors */ }
+            });
+          }
+        } catch (e) { /* ignore */ }
+        next();
+      });
       app.use(express.static(clientBuildPath));
       // For client-side routing, return index.html for GET requests that
       // appear to want HTML (skip API, uploads, and non-GET requests).
