@@ -251,6 +251,13 @@ async function main() {
   const sseClients = new Map();
   // Activity SSE clients (system-wide)
   const activitySseClients = new Set();
+  // Message logs (in-memory ring buffer) to help debug routing issues
+  const messageLogs = [];
+  const MAX_MESSAGE_LOGS = 500;
+  function pushMessageLog(entry) {
+    messageLogs.push(entry);
+    if (messageLogs.length > MAX_MESSAGE_LOGS) messageLogs.shift();
+  }
 
   // File upload support
   const path = require('path');
@@ -798,6 +805,7 @@ async function main() {
   app.post("/messages", async (req, res) => {
     const { pilgrimId, agentId, sender, message, fileUrl, fileType } = req.body;
     console.log('[MESSAGES] POST', { pilgrimId, agentId, sender, hasFile: !!fileUrl });
+    pushMessageLog({ ts: new Date().toISOString(), stage: 'received', payload: { pilgrimId, agentId, sender, message, fileUrl, fileType } });
     if (!sender || !message) return res.status(400).json({ error: "Missing fields: sender and message required" });
     // If agent is posting and provides an agentId, ensure token matches
     const auth = parseAuth(req);
@@ -834,6 +842,7 @@ async function main() {
             clientRes.write(`data: ${payload}\n\n`);
           }
         }
+        pushMessageLog({ ts: new Date().toISOString(), stage: 'notify_pilgrim', pilgrimId, payload: newMsg });
       }
       // Notify agent stream: prefer explicit agentId (if provided), otherwise use canonicalAgentId derived from pilgrim
       const agentToNotify = agentId || canonicalAgentId;
@@ -846,10 +855,21 @@ async function main() {
             clientRes.write(`data: ${payload}\n\n`);
           }
         }
+        pushMessageLog({ ts: new Date().toISOString(), stage: 'notify_agent', agentToNotify, payload: newMsg });
       }
     } catch (e) { console.error('[SSE NOTIFY ERROR]', e); }
     // Return canonical message object so clients can dedupe reliably
+    pushMessageLog({ ts: new Date().toISOString(), stage: 'respond', payload: newMsg });
     res.json(newMsg);
+  });
+
+  // Expose recent message logs for debugging (no auth) — remove or protect in prod
+  app.get('/_message-logs', (req, res) => {
+    try {
+      res.json({ count: messageLogs.length, logs: messageLogs.slice(-200) });
+    } catch (e) {
+      res.status(500).json({ error: String(e && e.message ? e.message : e) });
+    }
   });
   // --- ACTIVITY LOG ENDPOINTS ---
   app.get("/activity-log", async (req, res) => {
