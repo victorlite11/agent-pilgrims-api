@@ -811,10 +811,20 @@ async function main() {
       }
     }
     const timestamp = new Date().toISOString();
+    // Insert message and compute canonical agentId if not provided (derive from pilgrim record)
     const info = await db.run("INSERT INTO messages (pilgrimId, agentId, sender, message, timestamp, fileUrl, fileType) VALUES (?, ?, ?, ?, ?, ?, ?)", [pilgrimId || null, agentId || null, sender, message, timestamp, fileUrl || null, fileType || null]);
-    const newMsg = { id: info.lastID, pilgrimId: pilgrimId || null, agentId: agentId || null, sender, message, timestamp, fileUrl: fileUrl || null, fileType: fileType || null };
+    // Determine agentId: prefer provided agentId, otherwise derive from pilgrim
+    let canonicalAgentId = agentId || null;
+    if (!canonicalAgentId && pilgrimId) {
+      try {
+        const pilgrimRow = await db.get('SELECT agentId FROM pilgrims WHERE id = ?', [pilgrimId]);
+        if (pilgrimRow && pilgrimRow.agentId) canonicalAgentId = pilgrimRow.agentId;
+      } catch (e) { /* ignore */ }
+    }
+    const newMsg = { id: info.lastID, pilgrimId: pilgrimId || null, agentId: canonicalAgentId || null, sender, message, timestamp, fileUrl: fileUrl || null, fileType: fileType || null };
     // Notify SSE clients for this pilgrimId and/or agentId
     try {
+      // Notify pilgrim stream if present
       if (pilgrimId) {
         const key = `pilgrim:${pilgrimId}`;
         if (sseClients.has(key)) {
@@ -825,8 +835,9 @@ async function main() {
           }
         }
       }
-      if (agentId) {
-        const key = `agent:${agentId}`;
+      // Notify agent stream: use canonicalAgentId derived above to ensure agent receives messages
+      if (canonicalAgentId) {
+        const key = `agent:${canonicalAgentId}`;
         if (sseClients.has(key)) {
           const clients = sseClients.get(key);
           const payload = JSON.stringify(newMsg);
@@ -836,7 +847,8 @@ async function main() {
         }
       }
     } catch (e) { console.error('[SSE NOTIFY ERROR]', e); }
-    res.json({ id: info.lastID });
+    // Return canonical message object so clients can dedupe reliably
+    res.json(newMsg);
   });
   // --- ACTIVITY LOG ENDPOINTS ---
   app.get("/activity-log", async (req, res) => {
