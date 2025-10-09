@@ -100,24 +100,42 @@ async function main() {
     const clientBuildPath = path.join(__dirname, '..', 'dist');
     if (fs.existsSync(clientBuildPath)) {
       console.log('[STATIC] Serving client build from', clientBuildPath);
-      // Lightweight asset request logger to capture intermittent 502s at the edge
-      app.use((req, res, next) => {
-        try {
-          if (req.path && req.path.startsWith('/assets/')) {
-            const start = Date.now();
-            const ua = req.get('user-agent') || '';
-            const ip = req.ip || req.connection && req.connection.remoteAddress || 'unknown';
-            res.on('finish', () => {
-              try {
-                const ms = Date.now() - start;
-                console.log('[ASSET]', { method: req.method, path: req.path, status: res.statusCode, ip, ua: ua.substring(0,200), ms });
-              } catch (e) { /* swallow logging errors */ }
-            });
-          }
-        } catch (e) { /* ignore */ }
-        next();
-      });
+        // Lightweight asset request logger to capture intermittent 502s at the edge
+        // Keep an in-memory ring buffer of recent asset logs so we can fetch them via /_asset-logs
+        const assetLogs = [];
+        const MAX_ASSET_LOGS = 200;
+        function pushAssetLog(entry) {
+          assetLogs.push(entry);
+          if (assetLogs.length > MAX_ASSET_LOGS) assetLogs.shift();
+        }
+        app.use((req, res, next) => {
+          try {
+            if (req.path && req.path.startsWith('/assets/')) {
+              const start = Date.now();
+              const ua = req.get('user-agent') || '';
+              const ip = req.ip || (req.connection && req.connection.remoteAddress) || 'unknown';
+              res.on('finish', () => {
+                try {
+                  const ms = Date.now() - start;
+                  const entry = { ts: new Date().toISOString(), method: req.method, path: req.path, status: res.statusCode, ip, ua: ua.substring(0,200), ms };
+                  console.log('[ASSET]', entry);
+                  pushAssetLog(entry);
+                } catch (e) { /* swallow logging errors */ }
+              });
+            }
+          } catch (e) { /* ignore */ }
+          next();
+        });
       app.use(express.static(clientBuildPath));
+
+        // Expose recent asset logs for debugging (no auth) — remove in production if you prefer.
+        app.get('/_asset-logs', (req, res) => {
+          try {
+            return res.json({ count: assetLogs.length, logs: assetLogs.slice(-MAX_ASSET_LOGS) });
+          } catch (e) {
+            return res.status(500).json({ error: String(e && e.message ? e.message : e) });
+          }
+        });
       // For client-side routing, return index.html for GET requests that
       // appear to want HTML (skip API, uploads, and non-GET requests).
       app.get('*', (req, res, next) => {
