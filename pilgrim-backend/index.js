@@ -92,6 +92,55 @@ async function main() {
   app.use(cors());
   app.use(bodyParser.json());
 
+  // If a built frontend exists at ../dist, serve it as static files so
+  // Render can host the frontend and backend with a single service.
+  try {
+    const path = require('path');
+    const fs = require('fs');
+    const clientBuildPath = path.join(__dirname, '..', 'dist');
+    if (fs.existsSync(clientBuildPath)) {
+      console.log('[STATIC] Serving client build from', clientBuildPath);
+      app.use(express.static(clientBuildPath));
+      // For client-side routing, return index.html for GET requests that
+      // appear to want HTML (skip API, uploads, and non-GET requests).
+      app.get('*', (req, res, next) => {
+        if (req.method !== 'GET') return next();
+        const accept = (req.get('accept') || '').toLowerCase();
+        if (!accept.includes('text/html')) return next();
+        if (req.path.startsWith('/uploads')) return next();
+        // Serve index.html so the SPA can handle routing
+        return res.sendFile(path.join(clientBuildPath, 'index.html'));
+      });
+    }
+  } catch (e) {
+    console.warn('[STATIC] Error while configuring static client serve', e && e.message);
+  }
+
+  const USE_S3 = (process.env.USE_S3 || 'false').toLowerCase() === 'true';
+  let s3Client = null;
+  const S3_BUCKET = process.env.S3_BUCKET || null;
+  const S3_REGION = process.env.S3_REGION || null;
+  const S3_ENDPOINT = process.env.S3_ENDPOINT || null;
+  if (USE_S3) {
+    try {
+      const { S3Client } = require("@aws-sdk/client-s3");
+      const creds = {};
+      if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+        creds.credentials = {
+          accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+        };
+      }
+      const s3Opts = { region: S3_REGION || undefined, ...creds };
+      if (S3_ENDPOINT) s3Opts.endpoint = S3_ENDPOINT;
+      s3Client = new S3Client(s3Opts);
+      console.log('[S3] S3 client configured', { bucket: S3_BUCKET, region: S3_REGION, endpoint: S3_ENDPOINT });
+    } catch (e) {
+      console.warn('[S3] Failed to configure S3 client', e.message || e);
+      s3Client = null;
+    }
+  }
+
   // Simple token helpers using built-in crypto (no external deps)
   const crypto = require('crypto');
   const TOKEN_SECRET = process.env.TOKEN_SECRET || 'dev-secret-change-me';
@@ -156,8 +205,11 @@ async function main() {
   const fs = require('fs');
   const multer = require('multer');
   const uploadDir = path.join(__dirname, 'uploads');
-  if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
-  const storage = multer.diskStorage({
+  // If not using S3, keep the existing disk storage (and static serving). If using S3, use memoryStorage and upload to S3.
+  if (!USE_S3) {
+    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
+  }
+  const storage = USE_S3 ? multer.memoryStorage() : multer.diskStorage({
     destination: function (req, file, cb) {
       cb(null, uploadDir);
     },
@@ -174,13 +226,60 @@ async function main() {
       console.warn('[UPLOAD] No file uploaded');
       return res.status(400).json({ error: 'No file uploaded' });
     }
+    // If S3 is enabled and configured, upload the file buffer to S3 and return the S3 URL.
+    if (USE_S3 && s3Client && S3_BUCKET) {
+      (async () => {
+        try {
+          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+          // derive key from original filename
+          const key = `${uniqueSuffix}-${req.file.originalname}`.replace(/\s+/g, '_');
+          const { PutObjectCommand } = require('@aws-sdk/client-s3');
+          const put = new PutObjectCommand({
+            Bucket: S3_BUCKET,
+            Key: key,
+            Body: req.file.buffer,
+            ContentType: req.file.mimetype,
+            // Note: public-read may be required if bucket is public; see docs
+            ACL: process.env.S3_PUBLIC === 'true' ? 'public-read' : undefined,
+          });
+          await s3Client.send(put);
+          // Construct file URL. If a custom endpoint is provided use that.
+          let fileUrl;
+          if (S3_ENDPOINT) {
+            // If endpoint includes protocol and host, use it
+            fileUrl = `${S3_ENDPOINT.replace(/\/$/, '')}/${key}`;
+          } else if (process.env.S3_PUBLIC === 'true') {
+            fileUrl = `https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/${key}`;
+          } else {
+            // Fallback to signed URL for private buckets (short expiry)
+            try {
+              const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+              const { GetObjectCommand } = require('@aws-sdk/client-s3');
+              fileUrl = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: S3_BUCKET, Key: key }), { expiresIn: 60 * 60 * 24 });
+            } catch (e) {
+              // If presigner unavailable, return S3 object URL (may be private)
+              fileUrl = `s3://${S3_BUCKET}/${key}`;
+            }
+          }
+          console.log('[UPLOAD][S3] Uploaded', { key, url: fileUrl });
+          res.json({ fileUrl });
+        } catch (e) {
+          console.error('[UPLOAD][S3] upload error', e);
+          return res.status(500).json({ error: 'S3 upload failed', details: e.message });
+        }
+      })();
+      return;
+    }
+    // default: serve from local uploads folder
     const fileUrl = `/uploads/${req.file.filename}`;
     console.log('[UPLOAD] Saved file', { filename: req.file.filename, url: fileUrl });
     res.json({ fileUrl });
   });
 
-  // Serve uploaded files statically
-  app.use('/uploads', express.static(uploadDir));
+  // Serve uploaded files statically when not using S3
+  if (!USE_S3) {
+    app.use('/uploads', express.static(uploadDir));
+  }
 
   // Signup endpoint (role: pilgrim, agent, admin)
   app.post("/signup", async (req, res) => {
@@ -708,6 +807,13 @@ async function main() {
       activitySseClients.delete(res);
       console.log('[SSE ACTIVITY] Connection closed');
     });
+  });
+
+  // Simple healthcheck endpoint for Render / load balancers
+  app.get('/health', (req, res) => {
+    // lightweight check: database should be open
+    const alive = !!db;
+    res.status(alive ? 200 : 500).json({ ok: alive, time: new Date().toISOString() });
   });
 
   app.post("/activity-log", async (req, res) => {
