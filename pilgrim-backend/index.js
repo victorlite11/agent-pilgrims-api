@@ -312,28 +312,35 @@ async function main() {
       await db.run(`INSERT INTO ${table} (name, email, password) VALUES (?, ?, ?);`, [name, email, hashedPassword]);
       res.json({ success: true });
     } catch (e) {
-      console.error('[SIGNUP ERROR]', e);
-      res.status(400).json({ error: e.message });
+      console.error('[SIGNUP ERROR]', e && e.stack ? e.stack : e);
+      try { console.error('[SIGNUP] req.body (no password):', { email: req.body && req.body.email, role: req.body && req.body.role }); } catch (__) {}
+      res.status(500).json({ error: 'Internal server error' });
     }
   });
 
   app.post("/login", async (req, res) => {
-    const { email, password, role } = req.body;
-    if (!email || !password || !role) return res.status(400).json({ error: "Missing fields" });
-  let table = role + "s";
-    const user = await db.get(`SELECT * FROM ${table} WHERE email = ?`, [email]);
-    if (!user) {
-      console.log(`[LOGIN] No user found for email: ${email}`);
-      return res.status(401).json({ error: "Invalid credentials" });
+    try {
+      const { email, password, role } = req.body;
+      if (!email || !password || !role) return res.status(400).json({ error: "Missing fields" });
+      let table = role + "s";
+      const user = await db.get(`SELECT * FROM ${table} WHERE email = ?`, [email]);
+      if (!user) {
+        console.log(`[LOGIN] No user found for email: ${email}`);
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+      const valid = await bcrypt.compare(password, user.password);
+      console.log(`[LOGIN] Email: ${email}, DB Hash present: ${!!user.password}, Valid: ${valid}`);
+      if (!valid) return res.status(401).json({ error: "Invalid credentials" });
+      // Don't send password hash to client
+      const { password: _, ...userSafe } = user;
+      // Issue a simple token with role and id
+      const token = signToken({ id: userSafe.id, role });
+      res.json({ success: true, user: userSafe, token });
+    } catch (e) {
+      console.error('[LOGIN ERROR]', e && e.stack ? e.stack : e);
+      try { console.error('[LOGIN] req.body (no password):', { email: req.body && req.body.email, role: req.body && req.body.role }); } catch (__) {}
+      res.status(500).json({ error: 'Internal server error' });
     }
-    const valid = await bcrypt.compare(password, user.password);
-    console.log(`[LOGIN] Email: ${email}, Input: ${password}, DB Hash: ${user.password}, Valid: ${valid}`);
-    if (!valid) return res.status(401).json({ error: "Invalid credentials" });
-    // Don't send password hash to client
-    const { password: _, ...userSafe } = user;
-    // Issue a simple token with role and id
-    const token = signToken({ id: userSafe.id, role });
-    res.json({ success: true, user: userSafe, token });
   });
 
   // CRUD endpoints for pilgrims
