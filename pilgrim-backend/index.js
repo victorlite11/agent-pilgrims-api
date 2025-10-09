@@ -116,6 +116,23 @@ async function main() {
     console.warn('[STATIC] Error while configuring static client serve', e && e.message);
   }
 
+    // Debug endpoint: report whether the built client files exist and list assets.
+    // Useful to call from Render after deploy to confirm files were produced and are reachable.
+    app.get('/_static-check', (req, res) => {
+      try {
+        const path = require('path');
+        const fs = require('fs');
+        const clientBuildPath = path.join(__dirname, '..', 'dist');
+        const assetsDir = path.join(clientBuildPath, 'assets');
+        const exists = fs.existsSync(clientBuildPath);
+        const assetsExist = fs.existsSync(assetsDir);
+        const files = assetsExist ? fs.readdirSync(assetsDir) : [];
+        return res.json({ clientBuildPath, exists, assetsExist, assetCount: files.length, files });
+      } catch (e) {
+        return res.status(500).json({ error: String(e && e.message ? e.message : e) });
+      }
+    });
+
   const USE_S3 = (process.env.USE_S3 || 'false').toLowerCase() === 'true';
   let s3Client = null;
   const S3_BUCKET = process.env.S3_BUCKET || null;
