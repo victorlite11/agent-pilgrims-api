@@ -930,17 +930,11 @@ const AdminDashboard = () => {
                           body: JSON.stringify(payload)
                         });
                         if (res.ok) {
+                          const created = await res.json();
                           setChatInput("");
                           setAttachment(null);
                           setUploading(false);
-                          setChatMessages(prev => [...prev, { ...{
-                            id: Date.now(),
-                            from: payload.sender,
-                            message: payload.message,
-                            date: new Date().toLocaleString(),
-                            fileUrl: payload.fileUrl,
-                            fileType: payload.fileType
-                          }}]);
+                          setChatMessages(prev => [...prev, { id: created.id, from: created.sender || payload.sender, message: created.message || payload.message, date: created.timestamp ? new Date(created.timestamp).toLocaleString() : new Date().toLocaleString(), fileUrl: created.fileUrl || payload.fileUrl, fileType: created.fileType || payload.fileType }]);
                         } else {
                           setUploading(false);
                           toast({ title: 'Error', description: 'Failed to send message.', variant: 'destructive' });

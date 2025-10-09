@@ -832,10 +832,11 @@ const AgentDashboard = () => {
                                 fileType: fileType || null
                               };
                           const resp = await fetch(`${API_BASE_URL}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-                              if (resp.ok) {
-                                setChatInput(''); setAttachment(null); setUploading(false);
-                                setChatMessagesInt(prev => [...prev, { ...{
-                                  id: Date.now(), from: payload.sender, message: payload.message, date: new Date().toLocaleString(), fileUrl: payload.fileUrl, fileType: payload.fileType
+                              if (res.ok) {
+                                const created = await res.json();
+                                // Use canonical server message to avoid duplicates and ensure agentId/pilgrimId consistency
+                                setMessages(prev => [...prev, { id: created.id, pilgrimId: created.pilgrimId, agentId: created.agentId, from: created.sender, message: created.message, date: created.timestamp ? new Date(created.timestamp).toLocaleString() : new Date().toLocaleString(), fileUrl: created.fileUrl, fileType: created.fileType, read: false }]);
+                              } else {
                                 }}]);
                               } else {
                                 setUploading(false); toast({ title: 'Error', description: 'Failed to send message.', variant: 'destructive' });

@@ -835,9 +835,10 @@ async function main() {
           }
         }
       }
-      // Notify agent stream: use canonicalAgentId derived above to ensure agent receives messages
-      if (canonicalAgentId) {
-        const key = `agent:${canonicalAgentId}`;
+      // Notify agent stream: prefer explicit agentId (if provided), otherwise use canonicalAgentId derived from pilgrim
+      const agentToNotify = agentId || canonicalAgentId;
+      if (agentToNotify) {
+        const key = `agent:${agentToNotify}`;
         if (sseClients.has(key)) {
           const clients = sseClients.get(key);
           const payload = JSON.stringify(newMsg);
