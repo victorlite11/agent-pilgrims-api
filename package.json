@@ -13,7 +13,7 @@
     "e2e:test:documents": "node scripts/e2e/test-document-e2e.mjs",
     "build:client": "npm run build",
     "start:server": "node pilgrim-backend/index.js",
-  "render-build": "npm --prefix pilgrim-backend install && NODE_OPTIONS=--max-old-space-size=4096 npm run build:client",
+  "render-build": "npm --prefix pilgrim-backend install && NPM_CONFIG_PRODUCTION=false npm ci && NODE_OPTIONS=--max-old-space-size=4096 npm run build:client",
     "start": "npm run start:server"
   },
   "dependencies": {
