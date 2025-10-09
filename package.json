@@ -13,7 +13,8 @@
     "e2e:test:documents": "node scripts/e2e/test-document-e2e.mjs",
     "build:client": "npm run build",
     "start:server": "node pilgrim-backend/index.js",
-    "start": "npm run build:client && npm run start:server"
+    "render-build": "npm --prefix pilgrim-backend ci && NODE_OPTIONS=--max-old-space-size=4096 npm run build:client",
+    "start": "npm run start:server"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
