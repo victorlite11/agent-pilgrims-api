@@ -871,6 +871,21 @@ async function main() {
       res.status(500).json({ error: String(e && e.message ? e.message : e) });
     }
   });
+
+  // Debug endpoint: show counts and sample rows from user tables (no passwords)
+  app.get('/_db-rows', async (req, res) => {
+    try {
+      const pilgrims = await db.all('SELECT id, name, email, agentId, status FROM pilgrims LIMIT 200');
+      const agents = await db.all('SELECT id, name, email, status, joined FROM agents LIMIT 200');
+      const admins = await db.all('SELECT id, name, email FROM admins LIMIT 200');
+      const totalPilgrims = (await db.get('SELECT COUNT(*) as count FROM pilgrims')).count || 0;
+      const totalAgents = (await db.get('SELECT COUNT(*) as count FROM agents')).count || 0;
+      const totalAdmins = (await db.get('SELECT COUNT(*) as count FROM admins')).count || 0;
+      res.json({ totals: { pilgrims: totalPilgrims, agents: totalAgents, admins: totalAdmins }, pilgrims, agents, admins });
+    } catch (e) {
+      res.status(500).json({ error: String(e && e.message ? e.message : e) });
+    }
+  });
   // --- ACTIVITY LOG ENDPOINTS ---
   app.get("/activity-log", async (req, res) => {
     const { userId, userType, action, details } = req.query;
