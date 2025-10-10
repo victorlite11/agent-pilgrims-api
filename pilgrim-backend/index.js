@@ -934,3 +934,19 @@ async function main() {
 }
 
 main();
+
+// Debug-only: expose DB info when running locally in the repository (not meant for production)
+try {
+  const path = require('path');
+  const fs = require('fs');
+  const dbPath = path.join(__dirname, 'database.sqlite');
+  // write a tiny helper file at repo root for quick inspection
+  const info = {}; 
+  if (fs.existsSync(dbPath)) {
+    const st = fs.statSync(dbPath);
+    info.path = dbPath; info.size = st.size; info.mtime = st.mtime.toISOString();
+  } else {
+    info.error = 'DB file not found';
+  }
+  try { fs.writeFileSync(path.join(__dirname, 'activity_sse.txt'), JSON.stringify(info, null, 2)); } catch (e) {}
+} catch (e) {}
