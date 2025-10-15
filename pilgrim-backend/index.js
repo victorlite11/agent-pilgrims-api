@@ -129,13 +129,18 @@ async function main() {
       app.use(express.static(clientBuildPath));
 
         // Expose recent asset logs for debugging (no auth) — remove in production if you prefer.
-        app.get('/_asset-logs', (req, res) => {
-          try {
-            return res.json({ count: assetLogs.length, logs: assetLogs.slice(-MAX_ASSET_LOGS) });
-          } catch (e) {
-            return res.status(500).json({ error: String(e && e.message ? e.message : e) });
-          }
-        });
+        const ENABLE_DEBUG = (process.env.ENABLE_DEBUG || 'false').toLowerCase() === 'true';
+        if (ENABLE_DEBUG) {
+          app.get('/_asset-logs', (req, res) => {
+            try {
+              return res.json({ count: assetLogs.length, logs: assetLogs.slice(-MAX_ASSET_LOGS) });
+            } catch (e) {
+              return res.status(500).json({ error: String(e && e.message ? e.message : e) });
+            }
+          });
+        } else {
+          console.log('[DEBUG] Asset logs endpoint disabled (set ENABLE_DEBUG=true to enable)');
+        }
       // For client-side routing, return index.html for GET requests that
       // appear to want HTML (skip API, uploads, and non-GET requests).
       app.get('*', (req, res, next) => {
@@ -153,20 +158,22 @@ async function main() {
 
     // Debug endpoint: report whether the built client files exist and list assets.
     // Useful to call from Render after deploy to confirm files were produced and are reachable.
-    app.get('/_static-check', (req, res) => {
-      try {
-        const path = require('path');
-        const fs = require('fs');
-        const clientBuildPath = path.join(__dirname, '..', 'dist');
-        const assetsDir = path.join(clientBuildPath, 'assets');
-        const exists = fs.existsSync(clientBuildPath);
-        const assetsExist = fs.existsSync(assetsDir);
-        const files = assetsExist ? fs.readdirSync(assetsDir) : [];
-        return res.json({ clientBuildPath, exists, assetsExist, assetCount: files.length, files });
-      } catch (e) {
-        return res.status(500).json({ error: String(e && e.message ? e.message : e) });
-      }
-    });
+    if (ENABLE_DEBUG) {
+      app.get('/_static-check', (req, res) => {
+        try {
+          const path = require('path');
+          const fs = require('fs');
+          const clientBuildPath = path.join(__dirname, '..', 'dist');
+          const assetsDir = path.join(clientBuildPath, 'assets');
+          const exists = fs.existsSync(clientBuildPath);
+          const assetsExist = fs.existsSync(assetsDir);
+          const files = assetsExist ? fs.readdirSync(assetsDir) : [];
+          return res.json({ clientBuildPath, exists, assetsExist, assetCount: files.length, files });
+        } catch (e) {
+          return res.status(500).json({ error: String(e && e.message ? e.message : e) });
+        }
+      });
+    }
 
   const USE_S3 = (process.env.USE_S3 || 'false').toLowerCase() === 'true';
   let s3Client = null;
@@ -863,29 +870,33 @@ async function main() {
     res.json(newMsg);
   });
 
-  // Expose recent message logs for debugging (no auth) — remove or protect in prod
-  app.get('/_message-logs', (req, res) => {
-    try {
-      res.json({ count: messageLogs.length, logs: messageLogs.slice(-200) });
-    } catch (e) {
-      res.status(500).json({ error: String(e && e.message ? e.message : e) });
-    }
-  });
+  // Expose recent message logs for debugging (no auth) — gated behind ENABLE_DEBUG
+  if (ENABLE_DEBUG) {
+    app.get('/_message-logs', (req, res) => {
+      try {
+        res.json({ count: messageLogs.length, logs: messageLogs.slice(-200) });
+      } catch (e) {
+        res.status(500).json({ error: String(e && e.message ? e.message : e) });
+      }
+    });
 
-  // Debug endpoint: show counts and sample rows from user tables (no passwords)
-  app.get('/_db-rows', async (req, res) => {
-    try {
-      const pilgrims = await db.all('SELECT id, name, email, agentId, status FROM pilgrims LIMIT 200');
-      const agents = await db.all('SELECT id, name, email, status, joined FROM agents LIMIT 200');
-      const admins = await db.all('SELECT id, name, email FROM admins LIMIT 200');
-      const totalPilgrims = (await db.get('SELECT COUNT(*) as count FROM pilgrims')).count || 0;
-      const totalAgents = (await db.get('SELECT COUNT(*) as count FROM agents')).count || 0;
-      const totalAdmins = (await db.get('SELECT COUNT(*) as count FROM admins')).count || 0;
-      res.json({ totals: { pilgrims: totalPilgrims, agents: totalAgents, admins: totalAdmins }, pilgrims, agents, admins });
-    } catch (e) {
-      res.status(500).json({ error: String(e && e.message ? e.message : e) });
-    }
-  });
+    // Debug endpoint: show counts and sample rows from user tables (no passwords)
+    app.get('/_db-rows', async (req, res) => {
+      try {
+        const pilgrims = await db.all('SELECT id, name, email, agentId, status FROM pilgrims LIMIT 200');
+        const agents = await db.all('SELECT id, name, email, status, joined FROM agents LIMIT 200');
+        const admins = await db.all('SELECT id, name, email FROM admins LIMIT 200');
+        const totalPilgrims = (await db.get('SELECT COUNT(*) as count FROM pilgrims')).count || 0;
+        const totalAgents = (await db.get('SELECT COUNT(*) as count FROM agents')).count || 0;
+        const totalAdmins = (await db.get('SELECT COUNT(*) as count FROM admins')).count || 0;
+        res.json({ totals: { pilgrims: totalPilgrims, agents: totalAgents, admins: totalAdmins }, pilgrims, agents, admins });
+      } catch (e) {
+        res.status(500).json({ error: String(e && e.message ? e.message : e) });
+      }
+    });
+  } else {
+    console.log('[DEBUG] Message/db debug endpoints disabled (set ENABLE_DEBUG=true to enable)');
+  }
   // --- ACTIVITY LOG ENDPOINTS ---
   app.get("/activity-log", async (req, res) => {
     const { userId, userType, action, details } = req.query;

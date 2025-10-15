@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { execSync } from 'child_process';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, copySync } from 'fs';
 import fs from 'fs';
 import path from 'path';
 
