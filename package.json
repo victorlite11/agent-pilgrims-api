@@ -14,6 +14,8 @@
     "build:client": "npm run build",
     "start:server": "node pilgrim-backend/index.js",
   "render-build": "npm --prefix pilgrim-backend install && NPM_CONFIG_PRODUCTION=false npm ci && NODE_OPTIONS=--max-old-space-size=4096 npm run build:client",
+    "prepare:cpanel": "node scripts/prepare-cpanel.mjs",
+    "build:deploy": "npm run prepare:cpanel",
     "start": "npm run start:server"
   },
   "dependencies": {
