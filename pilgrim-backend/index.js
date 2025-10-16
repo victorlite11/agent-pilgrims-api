@@ -934,6 +934,22 @@ async function main() {
     res.status(alive ? 200 : 500).json({ ok: alive, time: new Date().toISOString() });
   });
 
+  // Expose deploy-info.json for debugging deployment metadata (gated)
+  if (ENABLE_DEBUG) {
+    app.get('/_deploy-info', (req, res) => {
+      try {
+        const path = require('path');
+        const fs = require('fs');
+        const file = path.join(__dirname, '..', 'deploy-info.json');
+        if (!fs.existsSync(file)) return res.status(404).json({ error: 'deploy-info.json not found' });
+        const raw = fs.readFileSync(file, 'utf8');
+        try { return res.json(JSON.parse(raw)); } catch (e) { return res.status(200).send(raw); }
+      } catch (e) {
+        return res.status(500).json({ error: String(e && e.message ? e.message : e) });
+      }
+    });
+  }
+
   app.post("/activity-log", async (req, res) => {
     const { userId, userType, action, details } = req.body;
     if (!userId || !userType || !action) return res.status(400).json({ error: "Missing fields" });
