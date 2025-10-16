@@ -1,0 +1,7 @@
+---
+deployment:
+  tasks:
+    - /bin/bash -lc "echo 'Starting cPanel deployment'; export NODE_ENV=production; npm ci --production=false"
+    - /bin/bash -lc "npm run build || true"
+    - /bin/bash -lc "node scripts/prepare-cpanel.mjs || true"
+    - /bin/bash -lc "echo 'cPanel deployment tasks finished'"
