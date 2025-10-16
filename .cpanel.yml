@@ -3,5 +3,6 @@ deployment:
   tasks:
     - /bin/bash -lc "echo 'Starting cPanel deployment'; export NODE_ENV=production; npm ci --production=false"
     - /bin/bash -lc "npm run build || true"
-    - /bin/bash -lc "node scripts/prepare-cpanel.mjs || true"
-    - /bin/bash -lc "echo 'cPanel deployment tasks finished'"
+  - /bin/bash -lc "node scripts/prepare-cpanel.mjs || true"
+  - /bin/bash -lc "if command -v git >/dev/null 2>&1 && [ -d .git ]; then echo '{\"sha\":\"'$(git rev-parse HEAD)'\",\"author\":\"'$(git show -s --format='%an')'\",\"date\":\"'$(git show -s --format='%aI')'\",\"message\":\"'$(git show -s --format='%s')'\"}' > deploy-info.json; else echo '{\"deployed_at\":\"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'\"}' > deploy-info.json; fi || true"
+  - /bin/bash -lc "echo 'cPanel deployment tasks finished'"
